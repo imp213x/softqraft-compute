@@ -1,0 +1,30 @@
+{
+  "name": "@softqraft/compute",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SoftQraft Compute: virtual machines for SoftQraft Cloud",
+  "license": "UNLICENSED",
+  "author": "SoftQraft Labs Ltd.",
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm --filter @softqraft/federation build && pnpm -r --filter '!@softqraft/federation' run build",
+    "dev:api": "pnpm --filter @softqraft/compute-api dev",
+    "typecheck": "pnpm -r --filter '!@softqraft/federation' run typecheck",
+    "test": "pnpm -r --filter '!@softqraft/federation' run test",
+    "test:pg": "pnpm --filter @softqraft/compute-api test:pg",
+    "test:ci": "pnpm run build && pnpm run typecheck && pnpm run test && pnpm run test:pg && pnpm run check:boundaries && pnpm run check:federation-vendor",
+    "check:boundaries": "node --test scripts/check-boundaries.test.mjs && node scripts/check-boundaries.mjs",
+    "check:federation-vendor": "node packages/federation/scripts/verify-vendored.mjs packages/federation"
+  },
+  "pnpm": {
+    "overrides": {
+      "@softqraft/federation>@types/node": "22.20.1",
+      "@softqraft/federation>tsx": "4.23.4",
+      "@softqraft/federation>typescript": "5.9.3"
+    }
+  }
+}

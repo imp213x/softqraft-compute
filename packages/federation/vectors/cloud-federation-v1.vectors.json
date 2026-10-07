@@ -1,0 +1,1447 @@
+{
+  "contract": "cloud-federation-v1",
+  "warning": "TEST KEY ONLY. Generated for conformance tests. Never configure this key in any environment.",
+  "audience": "realtime-media",
+  "clockSkewSeconds": 60,
+  "nonceTtlSeconds": 300,
+  "testKey": {
+    "keyId": "test-2026-09",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIG4QG1hY8/bWxP/ZUVDqmH8NycliGua8/DpisNxDt2Da\n-----END PRIVATE KEY-----\n",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfOOsafdzTTQZhkFN7DP/C7YH+5OudI+faDu8NvdUL+c=\n-----END PUBLIC KEY-----\n"
+  },
+  "valid": [
+    {
+      "name": "provision",
+      "method": "PUT",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001",
+      "timestamp": 1790000000,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "body": "{\"cloudOrganisationId\":\"11111111-1111-4111-8111-111111111111\",\"cloudProjectId\":\"22222222-2222-4222-8222-222222222222\",\"displayName\":\"Demo app\",\"regionId\":\"eu-central\"}",
+      "bodySha256": "214cef858bfe8bcf2adf1d3d257ee2f1d6a7486923cff08ef05a328e868a9ec8",
+      "canonicalString": "SQCF1\nrealtime-media\nPUT\n/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001\n1790000000\n0123456789abcdef0123456789abcdef\n214cef858bfe8bcf2adf1d3d257ee2f1d6a7486923cff08ef05a328e868a9ec8",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000000",
+        "X-SQ-Cloud-Nonce": "0123456789abcdef0123456789abcdef",
+        "X-SQ-Cloud-Signature": "o4TBNImfsnfUB5jZS3yrKwLL2SzQL_YgDbH8lAy0WQkVNtPSD8Y4VmaO3-aYGy8zwEOaBSVGfktqC4AMDdEgDQ"
+      },
+      "verifyAt": 1790000000
+    },
+    {
+      "name": "console-launch",
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "timestamp": 1790000010,
+      "nonce": "fedcba9876543210fedcba9876543210",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "bodySha256": "f6f753fa4e24d3282607d395072082d2fdb6668bc8277261ec083e2e4c8bdff3",
+      "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches\n1790000010\nfedcba9876543210fedcba9876543210\nf6f753fa4e24d3282607d395072082d2fdb6668bc8277261ec083e2e4c8bdff3",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      },
+      "verifyAt": 1790000010
+    },
+    {
+      "name": "revocation-empty-body",
+      "method": "POST",
+      "path": "/cloud/v1/principals/user_2abcTEST/revocations",
+      "timestamp": 1790000020,
+      "nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/principals/user_2abcTEST/revocations\n1790000020\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000020",
+        "X-SQ-Cloud-Nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "X-SQ-Cloud-Signature": "ONHgsKQ_glMUsxQ29Jq9SJpgnbwY8omYTyMhJXzCHktgUKwjaOjjZ-QZxL-N7rTEXXb8ytRTz80ofGBziJy8AA"
+      },
+      "verifyAt": 1790000020
+    }
+  ],
+  "invalid": [
+    {
+      "name": "tampered-body",
+      "reason": "signature",
+      "verifyAt": 1790000010,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"admin\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "tampered-path",
+      "reason": "signature",
+      "verifyAt": 1790000010,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000002/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "wrong-method",
+      "reason": "signature",
+      "verifyAt": 1790000010,
+      "method": "PUT",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "unknown-key-id",
+      "reason": "unknown_key",
+      "verifyAt": 1790000010,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "nope",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "stale-timestamp",
+      "reason": "stale",
+      "verifyAt": 1790000071,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "future-timestamp",
+      "reason": "stale",
+      "verifyAt": 1789999949,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "fedcba9876543210fedcba9876543210",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    },
+    {
+      "name": "malformed-nonce",
+      "reason": "malformed",
+      "verifyAt": 1790000010,
+      "method": "POST",
+      "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+      "body": "{\"principal\":{\"subject\":\"user_2abcTEST\",\"displayName\":\"Test User\",\"email\":\"test@example.com\"},\"role\":\"developer\",\"returnPath\":\"/console/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000010",
+        "X-SQ-Cloud-Nonce": "xyz",
+        "X-SQ-Cloud-Signature": "zUqZiH-o88pYDmEn5bXnoARAD2VpMeVdHpxNQfF8xiGegywwRwSNdqSxG-Vka2hugBjsbGQkQTNOVDFvcjPZBQ"
+      }
+    }
+  ],
+  "replay": {
+    "name": "nonce-replay",
+    "note": "Verify valid[1] twice at its timestamp against one nonce store: first accept, second reject with reason \"replay\"."
+  },
+  "vectorsVersion": "1.1.0",
+  "conventions": {
+    "audience": "Signatures in valid, invalid and operatorLaunch are for `audience`. A service with another audience re-signs them with the TEST key under its own audience (the conformance runner does this); the unmodified signatures must then fail with `signature`.",
+    "times": "`timestamp` and `verifyAt` are Unix seconds; session times are ISO-8601 UTC.",
+    "skew": "|verifyAt - timestamp| <= clockSkewSeconds is accepted (inclusive): 60 passes, 61 is stale.",
+    "nonce": "A nonce is stored only after every other check passes, and held for nonceTtlSeconds.",
+    "sequences": "Each sequence runs its steps in order against one nonce store. `ref` is `<section>/<name>`.",
+    "grants": "A grant is prefix + exactly 43 base64url characters; `hash` is lowercase SHA-256 hex of the whole string. Values here are fake.",
+    "returnPath": "Must start with basePath + '/', be at most 512 characters, contain no '//', '\\\\', control/space/DEL/C1 characters or %2e %2f %5c %00, survive WHATWG URL parsing unchanged with the same origin, and not be at or under a forbidden prefix (case-insensitive).",
+    "sessionExpiry": "Valid while now < expiresAt (exclusive), where expiresAt = min(expiresAt, createdAt + ttlSeconds).",
+    "revokedAfter": "Valid only when createdAt > revokedAfter (strict): a session created at the revocation instant is revoked.",
+    "freshness": "Fresh while now - createdAt < maxAgeSeconds (strict): 899s fresh, 900s and 901s not."
+  },
+  "operatorLaunch": {
+    "valid": [
+      {
+        "name": "operator-launch-admin",
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "timestamp": 1790000100,
+        "nonce": "00112233445566778899aabbccddeeff",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "bodySha256": "7b318e4d466b210c98405522f6234a587b24aeb25a3ebda2778d371e837685ac",
+        "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/operator-launches\n1790000100\n00112233445566778899aabbccddeeff\n7b318e4d466b210c98405522f6234a587b24aeb25a3ebda2778d371e837685ac",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "verifyAt": 1790000100
+      },
+      {
+        "name": "operator-launch-viewer-skew-plus-60",
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "timestamp": 1790000200,
+        "nonce": "11111111111111111111111111111111",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"viewer\",\"returnPath\":\"/admin/tenants?tab=usage\"}",
+        "bodySha256": "83959b699c8f0862bb8416db2a6947a940588640dd1769dd66bc3fb782b43993",
+        "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/operator-launches\n1790000200\n11111111111111111111111111111111\n83959b699c8f0862bb8416db2a6947a940588640dd1769dd66bc3fb782b43993",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000200",
+          "X-SQ-Cloud-Nonce": "11111111111111111111111111111111",
+          "X-SQ-Cloud-Signature": "GigfYadcsUp_0xR44AUWru-aDqiuTiYlUrlYiAHVk9f2OuAGzN3GbP1k4Bjdp8Gj__5m2mvXKQvGMydsJlTkBw"
+        },
+        "verifyAt": 1790000260,
+        "note": "Verified 60s after its timestamp: the skew window is inclusive."
+      },
+      {
+        "name": "operator-launch-owner-skew-minus-60",
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "timestamp": 1790000300,
+        "nonce": "22222222222222222222222222222222",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"owner\",\"returnPath\":\"/admin/credentials\"}",
+        "bodySha256": "7a74be30ae16d487ab0ee28dbc3d10136818914fb703c7f8a61561aef014ee2e",
+        "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/operator-launches\n1790000300\n22222222222222222222222222222222\n7a74be30ae16d487ab0ee28dbc3d10136818914fb703c7f8a61561aef014ee2e",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000300",
+          "X-SQ-Cloud-Nonce": "22222222222222222222222222222222",
+          "X-SQ-Cloud-Signature": "HhjXs5UPG2Jlx0xdSWgBKX24E2zPiKuBsvJVB6Y29CRFgs-JG9cVs3cZGXrgOY4EJ6PloZRyy83V-9x1t8tiDg"
+        },
+        "verifyAt": 1790000240,
+        "note": "Verified 60s before its timestamp: the skew window is inclusive both ways."
+      },
+      {
+        "name": "operator-launch-utf8-body",
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "timestamp": 1790000400,
+        "nonce": "33333333333333333333333333333333",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Zoë Ångström 测试\",\"email\":\"zoe@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/audit\"}",
+        "bodySha256": "0b3a68e915d60f0e777beea861604f6aedd529731bdac064acb3d7ae3db5cb88",
+        "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/operator-launches\n1790000400\n33333333333333333333333333333333\n0b3a68e915d60f0e777beea861604f6aedd529731bdac064acb3d7ae3db5cb88",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000400",
+          "X-SQ-Cloud-Nonce": "33333333333333333333333333333333",
+          "X-SQ-Cloud-Signature": "_G4Mz_A29JmQ6yzTYROksrpuc3sdonSn7HYyQxr8Xz1yVEiWrXGSC0ihDTyG6ZfgF7j1TclLuK-ntA7qivbMAQ"
+        },
+        "verifyAt": 1790000400,
+        "note": "Non-ASCII body: the hash is over the UTF-8 bytes."
+      },
+      {
+        "name": "operator-launch-query-string",
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches?trace=abc&v=1",
+        "timestamp": 1790000500,
+        "nonce": "44444444444444444444444444444444",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"viewer\",\"returnPath\":\"/admin/\"}",
+        "bodySha256": "395947b9701b9a8bec400c174483705a1bf0eadeee3cdef25465c4cd755198c5",
+        "canonicalString": "SQCF1\nrealtime-media\nPOST\n/cloud/v1/operator-launches?trace=abc&v=1\n1790000500\n44444444444444444444444444444444\n395947b9701b9a8bec400c174483705a1bf0eadeee3cdef25465c4cd755198c5",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000500",
+          "X-SQ-Cloud-Nonce": "44444444444444444444444444444444",
+          "X-SQ-Cloud-Signature": "fMxP7lftRoiVwHh1uzv-otsMDmGBBANsut4NaXNeLKzryLhZXYoatuSAeats5XFXSR9EkGPoGd0fvdvtc1SnBA"
+        },
+        "verifyAt": 1790000500,
+        "note": "The query string is part of the signed path, exactly as sent."
+      }
+    ],
+    "invalid": [
+      {
+        "name": "operator-tampered-role",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"owner\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Role raised from admin to owner after signing."
+      },
+      {
+        "name": "operator-tampered-return-path",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/credentials\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "returnPath changed after signing."
+      },
+      {
+        "name": "operator-empty-body",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Body dropped after signing."
+      },
+      {
+        "name": "operator-tampered-query",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches?x=1",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Query string added after signing."
+      },
+      {
+        "name": "operator-wrong-method",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "PUT",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Signed as POST, sent as PUT."
+      },
+      {
+        "name": "operator-other-endpoint",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/service-instances/7f3c2a9e-0000-4000-8000-000000000001/console-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Operator signature replayed onto the Console launch endpoint."
+      },
+      {
+        "name": "operator-stale-plus-61",
+        "reason": "stale",
+        "verifyAt": 1790000161,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "61s after the timestamp."
+      },
+      {
+        "name": "operator-stale-minus-61",
+        "reason": "stale",
+        "verifyAt": 1790000039,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "61s before the timestamp."
+      },
+      {
+        "name": "operator-unknown-key",
+        "reason": "unknown_key",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "prod-2026-10",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Well-formed but unknown key id."
+      },
+      {
+        "name": "operator-order-unknown-key-before-stale",
+        "reason": "unknown_key",
+        "verifyAt": 1790003700,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "prod-2026-10",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Unknown key and stale: unknown_key wins (check 2 before 3)."
+      },
+      {
+        "name": "operator-order-stale-before-signature",
+        "reason": "stale",
+        "verifyAt": 1790003700,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"owner\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Stale and tampered: stale wins (check 3 before 4)."
+      },
+      {
+        "name": "operator-order-malformed-before-unknown-key",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "bad key",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "XYZ",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Malformed nonce and bad key id: malformed wins (check 1)."
+      },
+      {
+        "name": "operator-malformed-key-id-chars",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test 2026/09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Key id outside [A-Za-z0-9._-]."
+      },
+      {
+        "name": "operator-malformed-nonce-uppercase",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899AABBCCDDEEFF",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Nonce must be lowercase hex."
+      },
+      {
+        "name": "operator-malformed-nonce-short",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeef",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "31 hex characters."
+      },
+      {
+        "name": "operator-malformed-timestamp-fraction",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100.0",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Timestamp must be whole decimal seconds."
+      },
+      {
+        "name": "operator-malformed-timestamp-negative",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "-1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "No sign allowed."
+      },
+      {
+        "name": "operator-malformed-timestamp-13-digits",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100000",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Milliseconds instead of seconds (13 digits)."
+      },
+      {
+        "name": "operator-malformed-signature-short",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJB"
+        },
+        "note": "85 base64url characters."
+      },
+      {
+        "name": "operator-malformed-signature-padded",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg=="
+        },
+        "note": "Padding is not allowed."
+      },
+      {
+        "name": "operator-malformed-signature-base64",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "+TZY41kfU48PZicS1zacjuAogb58+YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Standard base64 alphabet instead of base64url."
+      },
+      {
+        "name": "operator-missing-signature",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff"
+        },
+        "note": "Signature header absent."
+      },
+      {
+        "name": "operator-missing-timestamp",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+        },
+        "note": "Timestamp header absent."
+      },
+      {
+        "name": "operator-duplicate-nonce-header",
+        "reason": "malformed",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg",
+          "x-sq-cloud-nonce": "00112233445566778899aabbccddeeff"
+        },
+        "note": "The same header twice under different casing counts as malformed."
+      },
+      {
+        "name": "operator-signature-zeroed",
+        "reason": "signature",
+        "verifyAt": 1790000100,
+        "method": "POST",
+        "path": "/cloud/v1/operator-launches",
+        "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+        "headers": {
+          "X-SQ-Cloud-Key-Id": "test-2026-09",
+          "X-SQ-Cloud-Timestamp": "1790000100",
+          "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+          "X-SQ-Cloud-Signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        },
+        "note": "Well-formed but wrong signature."
+      }
+    ]
+  },
+  "sequences": [
+    {
+      "name": "nonce-replay",
+      "note": "Restates the v1.0 `replay` case: valid/console-launch twice against one nonce store.",
+      "steps": [
+        {
+          "ref": "valid/console-launch",
+          "expect": "ok"
+        },
+        {
+          "ref": "valid/console-launch",
+          "expect": "replay"
+        }
+      ]
+    },
+    {
+      "name": "operator-nonce-replay",
+      "steps": [
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "ok"
+        },
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "replay"
+        }
+      ]
+    },
+    {
+      "name": "failure-does-not-store-nonce",
+      "note": "A request that fails signature must not consume its nonce.",
+      "steps": [
+        {
+          "ref": "operatorLaunch.invalid/operator-tampered-role",
+          "expect": "signature"
+        },
+        {
+          "ref": "operatorLaunch.invalid/operator-stale-plus-61",
+          "expect": "stale"
+        },
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "ok"
+        }
+      ]
+    },
+    {
+      "name": "signature-checked-before-replay",
+      "note": "After the nonce is used, a tampered request with that nonce still reports signature, not replay.",
+      "steps": [
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "ok"
+        },
+        {
+          "ref": "operatorLaunch.invalid/operator-tampered-role",
+          "expect": "signature"
+        },
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "replay"
+        }
+      ]
+    },
+    {
+      "name": "stale-checked-before-replay",
+      "steps": [
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "ok"
+        },
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "verifyAt": 1790000161,
+          "expect": "stale"
+        }
+      ]
+    },
+    {
+      "name": "replay-within-skew-window",
+      "note": "Replayed 60s later, still inside the skew window: replay.",
+      "steps": [
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "expect": "ok"
+        },
+        {
+          "ref": "operatorLaunch.valid/operator-launch-admin",
+          "verifyAt": 1790000160,
+          "expect": "replay"
+        }
+      ]
+    }
+  ],
+  "crossAudience": [
+    {
+      "name": "realtime-media-signature-at-workforce",
+      "signedFor": "realtime-media",
+      "verifyAs": "workforce",
+      "expect": "signature",
+      "method": "POST",
+      "path": "/cloud/v1/operator-launches",
+      "timestamp": 1790000100,
+      "nonce": "00112233445566778899aabbccddeeff",
+      "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"admin\",\"returnPath\":\"/admin/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000100",
+        "X-SQ-Cloud-Nonce": "00112233445566778899aabbccddeeff",
+        "X-SQ-Cloud-Signature": "qTZY41kfU48PZicS1zacjuAogb58-YUpmHJ0NwGj6vpYuCisPR3NNdUZHbt9KcXtOICBo3KUp45J7pjbBmsJBg"
+      },
+      "verifyAt": 1790000100,
+      "note": "Byte-identical to operatorLaunch.valid/operator-launch-admin; workforce must reject it."
+    },
+    {
+      "name": "realtime-media-signature-at-sodl",
+      "signedFor": "realtime-media",
+      "verifyAs": "sodl",
+      "expect": "signature",
+      "method": "POST",
+      "path": "/cloud/v1/principals/user_2abcTEST/revocations",
+      "timestamp": 1790000020,
+      "nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "body": "",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000020",
+        "X-SQ-Cloud-Nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "X-SQ-Cloud-Signature": "ONHgsKQ_glMUsxQ29Jq9SJpgnbwY8omYTyMhJXzCHktgUKwjaOjjZ-QZxL-N7rTEXXb8ytRTz80ofGBziJy8AA"
+      },
+      "verifyAt": 1790000020,
+      "note": "Byte-identical to valid/revocation-empty-body; a revocation for Media is useless at SODL."
+    },
+    {
+      "name": "workforce-signature-at-realtime-media",
+      "signedFor": "workforce",
+      "verifyAs": "realtime-media",
+      "expect": "signature",
+      "method": "POST",
+      "path": "/cloud/v1/operator-launches",
+      "timestamp": 1790000600,
+      "nonce": "55555555555555555555555555555555",
+      "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"owner\",\"returnPath\":\"/admin/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000600",
+        "X-SQ-Cloud-Nonce": "55555555555555555555555555555555",
+        "X-SQ-Cloud-Signature": "WLs5ei33QIZCzGKJkB4wg2Na8PU1YswLyUnwC69_MI5wFDOIq7fspiXQ3MMMBGcAmDl32l6D5ZMAbUUOFsTuBw"
+      },
+      "verifyAt": 1790000600,
+      "note": "Signed for workforce; Realtime Media must reject it."
+    },
+    {
+      "name": "workforce-signature-at-workforce",
+      "signedFor": "workforce",
+      "verifyAs": "workforce",
+      "expect": "ok",
+      "method": "POST",
+      "path": "/cloud/v1/operator-launches",
+      "timestamp": 1790000600,
+      "nonce": "55555555555555555555555555555555",
+      "body": "{\"principal\":{\"subject\":\"user_2opsTEST\",\"displayName\":\"Test Operator\",\"email\":\"operator@example.com\"},\"role\":\"owner\",\"returnPath\":\"/admin/\"}",
+      "headers": {
+        "X-SQ-Cloud-Key-Id": "test-2026-09",
+        "X-SQ-Cloud-Timestamp": "1790000600",
+        "X-SQ-Cloud-Nonce": "55555555555555555555555555555555",
+        "X-SQ-Cloud-Signature": "WLs5ei33QIZCzGKJkB4wg2Na8PU1YswLyUnwC69_MI5wFDOIq7fspiXQ3MMMBGcAmDl32l6D5ZMAbUUOFsTuBw"
+      },
+      "verifyAt": 1790000600,
+      "note": "Positive control for a workforce verifier."
+    }
+  ],
+  "grantIsolation": [
+    {
+      "name": "console-grant-as-console",
+      "value": "sqlg_HyYtNDtCSVBXXmVsc3qBiI-WnaSrsrnAx87V3OPq8fg",
+      "expectedKind": "console",
+      "accept": true,
+      "hash": "36e8de7f9899cff50dedf6e522e92ecdbe9e1285f4c949457e9a9fd01ac1d6ae"
+    },
+    {
+      "name": "link-grant-as-link",
+      "value": "sqlk_PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30-wIJEBc",
+      "expectedKind": "link",
+      "accept": true,
+      "hash": "5c8114c18859f81f3dc6d6d9c503437758dde56bf8b34e4dcf42b0da1aeec325"
+    },
+    {
+      "name": "operator-grant-as-operator",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzY",
+      "expectedKind": "operator",
+      "accept": true,
+      "hash": "d011764f7c7df4553ec413e6b2a7c662e65f466e6c58a4b055382b5948a0946c"
+    },
+    {
+      "name": "console-grant-as-operator",
+      "value": "sqlg_HyYtNDtCSVBXXmVsc3qBiI-WnaSrsrnAx87V3OPq8fg",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "console-grant-as-link",
+      "value": "sqlg_HyYtNDtCSVBXXmVsc3qBiI-WnaSrsrnAx87V3OPq8fg",
+      "expectedKind": "link",
+      "accept": false
+    },
+    {
+      "name": "link-grant-as-console",
+      "value": "sqlk_PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30-wIJEBc",
+      "expectedKind": "console",
+      "accept": false
+    },
+    {
+      "name": "link-grant-as-operator",
+      "value": "sqlk_PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30-wIJEBc",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-as-console",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzY",
+      "expectedKind": "console",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-as-link",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzY",
+      "expectedKind": "link",
+      "accept": false
+    },
+    {
+      "name": "operator-session-token-as-operator-grant",
+      "value": "sqos_fIOKkZifpq20u8LJ0Nfe5ezz-gEIDxYdJCsyOUBHTlU",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "console-session-token-as-console-grant",
+      "value": "sqcs_fIOKkZifpq20u8LJ0Nfe5ezz-gEIDxYdJCsyOUBHTlU",
+      "expectedKind": "console",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-uppercase-prefix",
+      "value": "SQOG_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzY",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-no-underscore",
+      "value": "sqogXWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzY",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-42-chars",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLz",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-44-chars",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLzYA",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-plus-char",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLz+",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-padded",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLz=",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-leading-space",
+      "value": " sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLz",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-grant-trailing-newline",
+      "value": "sqog_XWRrcnmAh46VnKOqsbi_xs3U2-Lp8Pf-BQwTGiEoLz\n",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "operator-prefix-only",
+      "value": "sqog_",
+      "expectedKind": "operator",
+      "accept": false
+    },
+    {
+      "name": "empty-string",
+      "value": "",
+      "expectedKind": "console",
+      "accept": false
+    },
+    {
+      "name": "double-prefix",
+      "value": "sqog_sqlg_Zifpq20u8LJ0Nfe5ezz-gEIDxYdJCsyOUBHTlU",
+      "expectedKind": "console",
+      "accept": false
+    }
+  ],
+  "returnPath": {
+    "profiles": {
+      "media-admin": {
+        "basePath": "/admin",
+        "forbiddenPrefixes": [
+          "/admin/v1/"
+        ]
+      },
+      "media-console": {
+        "basePath": "/console",
+        "forbiddenPrefixes": []
+      }
+    },
+    "cases": [
+      {
+        "name": "admin-root",
+        "profile": "media-admin",
+        "path": "/admin/",
+        "accept": true
+      },
+      {
+        "name": "admin-page",
+        "profile": "media-admin",
+        "path": "/admin/tenants",
+        "accept": true
+      },
+      {
+        "name": "admin-page-query",
+        "profile": "media-admin",
+        "path": "/admin/tenants/cld_0123456789ab?tab=keys",
+        "accept": true
+      },
+      {
+        "name": "admin-page-fragment",
+        "profile": "media-admin",
+        "path": "/admin/usage#top",
+        "accept": true
+      },
+      {
+        "name": "admin-sibling-of-api-prefix",
+        "profile": "media-admin",
+        "path": "/admin/v1-release-notes",
+        "accept": true
+      },
+      {
+        "name": "admin-no-trailing-slash",
+        "profile": "media-admin",
+        "path": "/admin",
+        "accept": false
+      },
+      {
+        "name": "admin-api-prefix",
+        "profile": "media-admin",
+        "path": "/admin/v1/",
+        "accept": false
+      },
+      {
+        "name": "admin-api-route",
+        "profile": "media-admin",
+        "path": "/admin/v1/auth/me",
+        "accept": false
+      },
+      {
+        "name": "admin-api-stem",
+        "profile": "media-admin",
+        "path": "/admin/v1",
+        "accept": false
+      },
+      {
+        "name": "admin-api-stem-query",
+        "profile": "media-admin",
+        "path": "/admin/v1?x=1",
+        "accept": false
+      },
+      {
+        "name": "admin-api-stem-fragment",
+        "profile": "media-admin",
+        "path": "/admin/v1#x",
+        "accept": false
+      },
+      {
+        "name": "admin-api-uppercase",
+        "profile": "media-admin",
+        "path": "/admin/V1/auth/me",
+        "accept": false
+      },
+      {
+        "name": "console-path",
+        "profile": "media-admin",
+        "path": "/console/",
+        "accept": false
+      },
+      {
+        "name": "console-page",
+        "profile": "media-admin",
+        "path": "/console/keys",
+        "accept": false
+      },
+      {
+        "name": "protocol-relative",
+        "profile": "media-admin",
+        "path": "//evil.example/admin/",
+        "accept": false
+      },
+      {
+        "name": "double-slash-inside",
+        "profile": "media-admin",
+        "path": "/admin//evil.example",
+        "accept": false
+      },
+      {
+        "name": "https-scheme",
+        "profile": "media-admin",
+        "path": "https://x",
+        "accept": false
+      },
+      {
+        "name": "https-scheme-admin",
+        "profile": "media-admin",
+        "path": "https://x/admin/",
+        "accept": false
+      },
+      {
+        "name": "javascript-scheme",
+        "profile": "media-admin",
+        "path": "javascript:alert(1)",
+        "accept": false
+      },
+      {
+        "name": "backslash",
+        "profile": "media-admin",
+        "path": "/admin/\\evil.example",
+        "accept": false
+      },
+      {
+        "name": "backslash-root",
+        "profile": "media-admin",
+        "path": "\\admin\\",
+        "accept": false
+      },
+      {
+        "name": "backslash-protocol-relative",
+        "profile": "media-admin",
+        "path": "/\\evil.example",
+        "accept": false
+      },
+      {
+        "name": "dot-dot-to-console",
+        "profile": "media-admin",
+        "path": "/admin/../console",
+        "accept": false
+      },
+      {
+        "name": "dot-dot-to-console-slash",
+        "profile": "media-admin",
+        "path": "/admin/../console/",
+        "accept": false
+      },
+      {
+        "name": "dot-dot-end",
+        "profile": "media-admin",
+        "path": "/admin/tenants/..",
+        "accept": false
+      },
+      {
+        "name": "dot-segment",
+        "profile": "media-admin",
+        "path": "/admin/./tenants",
+        "accept": false
+      },
+      {
+        "name": "encoded-dot-dot",
+        "profile": "media-admin",
+        "path": "/admin/%2e%2e/console/",
+        "accept": false
+      },
+      {
+        "name": "encoded-dot-dot-upper",
+        "profile": "media-admin",
+        "path": "/admin/%2E%2E/console/",
+        "accept": false
+      },
+      {
+        "name": "encoded-slash",
+        "profile": "media-admin",
+        "path": "/admin/%2F%2Fevil.example",
+        "accept": false
+      },
+      {
+        "name": "encoded-backslash",
+        "profile": "media-admin",
+        "path": "/admin/%5cevil.example",
+        "accept": false
+      },
+      {
+        "name": "encoded-nul",
+        "profile": "media-admin",
+        "path": "/admin/x%00",
+        "accept": false
+      },
+      {
+        "name": "space",
+        "profile": "media-admin",
+        "path": "/admin/ten ants",
+        "accept": false
+      },
+      {
+        "name": "tab",
+        "profile": "media-admin",
+        "path": "/admin/\ttenants",
+        "accept": false
+      },
+      {
+        "name": "newline",
+        "profile": "media-admin",
+        "path": "/admin/\nx",
+        "accept": false
+      },
+      {
+        "name": "del-char",
+        "profile": "media-admin",
+        "path": "/admin/",
+        "accept": false
+      },
+      {
+        "name": "c1-control",
+        "profile": "media-admin",
+        "path": "/admin/x",
+        "accept": false
+      },
+      {
+        "name": "non-ascii",
+        "profile": "media-admin",
+        "path": "/admin/café",
+        "accept": false
+      },
+      {
+        "name": "empty",
+        "profile": "media-admin",
+        "path": "",
+        "accept": false
+      },
+      {
+        "name": "relative-no-leading-slash",
+        "profile": "media-admin",
+        "path": "admin/",
+        "accept": false
+      },
+      {
+        "name": "prefix-lookalike",
+        "profile": "media-admin",
+        "path": "/administrator/",
+        "accept": false
+      },
+      {
+        "name": "uppercase-base",
+        "profile": "media-admin",
+        "path": "/Admin/",
+        "accept": false
+      },
+      {
+        "name": "too-long",
+        "profile": "media-admin",
+        "path": "/admin/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accept": false
+      },
+      {
+        "name": "max-length",
+        "profile": "media-admin",
+        "path": "/admin/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accept": true
+      },
+      {
+        "name": "console-root",
+        "profile": "media-console",
+        "path": "/console/",
+        "accept": true
+      },
+      {
+        "name": "console-query",
+        "profile": "media-console",
+        "path": "/console/projects?tab=keys",
+        "accept": true
+      },
+      {
+        "name": "console-dot-dot-to-admin",
+        "profile": "media-console",
+        "path": "/console/../admin/",
+        "accept": false
+      },
+      {
+        "name": "console-admin-path",
+        "profile": "media-console",
+        "path": "/admin/",
+        "accept": false
+      },
+      {
+        "name": "console-protocol-relative",
+        "profile": "media-console",
+        "path": "//evil",
+        "accept": false
+      }
+    ]
+  },
+  "sessions": {
+    "validity": [
+      {
+        "name": "operator-age-0",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T12:00:00.000Z",
+        "valid": true
+      },
+      {
+        "name": "operator-age-3599",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T12:59:59.000Z",
+        "valid": true
+      },
+      {
+        "name": "operator-age-3599.999",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T12:59:59.999Z",
+        "valid": true
+      },
+      {
+        "name": "operator-age-3600-expired",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T13:00:00.000Z",
+        "valid": false,
+        "reason": "expired"
+      },
+      {
+        "name": "operator-age-3601-expired",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T13:00:01.000Z",
+        "valid": false,
+        "reason": "expired"
+      },
+      {
+        "name": "console-expires-at-minus-1",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "expiresAt": "2026-10-01T20:00:00.000Z",
+        "now": "2026-10-01T19:59:59.000Z",
+        "valid": true
+      },
+      {
+        "name": "console-at-expires-at",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "expiresAt": "2026-10-01T20:00:00.000Z",
+        "now": "2026-10-01T20:00:00.000Z",
+        "valid": false,
+        "reason": "expired"
+      },
+      {
+        "name": "expires-at-and-ttl-earlier-wins",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "expiresAt": "2026-10-01T20:00:00.000Z",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T13:00:00.000Z",
+        "valid": false,
+        "reason": "expired"
+      },
+      {
+        "name": "revoked-after-null",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": null,
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": true
+      },
+      {
+        "name": "revoked-after-before-created",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T11:59:59.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": true
+      },
+      {
+        "name": "revoked-after-1ms-before-created",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T11:59:59.999Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": true
+      },
+      {
+        "name": "revoked-after-equals-created",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": false,
+        "reason": "revoked"
+      },
+      {
+        "name": "revoked-after-after-created",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T12:00:30.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": false,
+        "reason": "revoked"
+      },
+      {
+        "name": "revoked-after-in-future",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T12:02:00.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": false,
+        "reason": "revoked"
+      },
+      {
+        "name": "revoked-after-then-new-session",
+        "createdAt": "2026-10-01T12:00:31.000Z",
+        "ttlSeconds": 3600,
+        "revokedAfter": "2026-10-01T12:00:30.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": true
+      },
+      {
+        "name": "invalid-created-at",
+        "createdAt": "not-a-date",
+        "ttlSeconds": 3600,
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": false,
+        "reason": "invalid_input"
+      },
+      {
+        "name": "no-lifetime",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:01:00.000Z",
+        "valid": false,
+        "reason": "invalid_input"
+      }
+    ],
+    "freshness": [
+      {
+        "name": "age-0",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:00:00.000Z",
+        "maxAgeSeconds": 900,
+        "fresh": true
+      },
+      {
+        "name": "age-899",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:14:59.000Z",
+        "maxAgeSeconds": 900,
+        "fresh": true
+      },
+      {
+        "name": "age-899.999",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:14:59.999Z",
+        "maxAgeSeconds": 900,
+        "fresh": true
+      },
+      {
+        "name": "age-900",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:15:00.000Z",
+        "maxAgeSeconds": 900,
+        "fresh": false
+      },
+      {
+        "name": "age-901",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:15:01.000Z",
+        "maxAgeSeconds": 900,
+        "fresh": false
+      },
+      {
+        "name": "age-3599",
+        "createdAt": "2026-10-01T12:00:00.000Z",
+        "now": "2026-10-01T12:59:59.000Z",
+        "maxAgeSeconds": 900,
+        "fresh": false
+      }
+    ]
+  }
+}
