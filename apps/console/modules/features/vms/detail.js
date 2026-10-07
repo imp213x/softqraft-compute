@@ -22,8 +22,19 @@ import { actionsMenu, copyButton, openDialog, poller, toast } from "../../shared
 import { confirmDelete, resizeDialog, snapshotDialog } from "./dialogs.js";
 import { POLL_MS } from "./list.js";
 
+/**
+ * What the host offers for this instance. C1e puts `capabilities` on the
+ * instance (`console`, `resize`, `snapshot`); this branch's detail route
+ * returns `{ console }` beside it. Read both defensively: a missing field
+ * means no console, and resize and snapshot allowed.
+ */
+export function capabilitiesOf(instance, detailCapabilities) {
+  const caps = { ...(detailCapabilities ?? {}), ...(instance?.capabilities ?? {}) };
+  return { console: caps.console === true, resize: caps.resize !== false, snapshot: caps.snapshot !== false };
+}
+
 /** Which menu actions apply now, and why the others do not. */
-export function menuState(instance) {
+export function menuState(instance, capabilities = capabilitiesOf(instance)) {
   const s = instance.state;
   const changing = instanceStatus(s).changing;
   return {
@@ -33,6 +44,8 @@ export function menuState(instance) {
     snapshotEnabled: s === "running" || s === "stopped",
     deleteEnabled: s !== "deleting" && s !== "deleted",
     changing,
+    resizeShown: capabilities.resize,
+    snapshotShown: capabilities.snapshot,
   };
 }
 
@@ -71,7 +84,7 @@ export function renderDetail(ctx) {
       return true;
     }
     shown = true;
-    draw(detail.instance, detail.capabilities ?? { console: false }, snapshots, usage);
+    draw(detail.instance, capabilitiesOf(detail.instance, detail.capabilities), snapshots, usage);
     const again = instanceStatus(detail.instance.state).changing || snapshots.some((s) => snapshotStatus(s.state).changing);
     if (again) poll.ensure();
     return again;
@@ -95,8 +108,8 @@ export function renderDetail(ctx) {
     }
   }
 
-  function menu(instance) {
-    const m = menuState(instance);
+  function menu(instance, capabilities) {
+    const m = menuState(instance, capabilities);
     return actionsMenu({
       label: COPY.actions,
       items: [
@@ -107,13 +120,13 @@ export function renderDetail(ctx) {
           onSelect: () =>
             void act({ action: m.power }, m.power === "stop" ? COPY.stoppedToast : COPY.startedToast),
         },
-        {
+        m.resizeShown && {
           label: COPY.resize,
           disabled: !m.resizeEnabled,
           hint: m.resizeEnabled ? undefined : COPY.resizeStopFirst,
           onSelect: () => resizeDialog({ ...ctx, instance, onDone: afterChange }),
         },
-        {
+        m.snapshotShown && {
           label: COPY.snapshot,
           disabled: !m.snapshotEnabled,
           hint: m.snapshotEnabled ? undefined : COPY.snapshotNeedsState,
@@ -245,7 +258,7 @@ export function renderDetail(ctx) {
           h("h1", null, instance.spec.name),
           h("span", { role: "status", "aria-live": "polite" }, statusPill(status)),
         ),
-        ctx.canWrite && instance.state !== "deleted" ? menu(instance) : null,
+        ctx.canWrite && instance.state !== "deleted" ? menu(instance, capabilities) : null,
       ),
       note ? h("div", { class: "sq-notice", dataset: { tone: instance.state === "error" ? "bad" : "warn" } }, h("p", null, note)) : null,
       h(

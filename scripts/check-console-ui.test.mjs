@@ -33,7 +33,7 @@ import { grantFromHash, safeReturnPath } from "../apps/console/modules/shared/sh
 import { createApi } from "../apps/console/modules/api.js";
 import { routeOf } from "../apps/console/modules/console-app.js";
 import { adminRouteOf } from "../apps/console/modules/admin-app.js";
-import { menuState } from "../apps/console/modules/features/vms/detail.js";
+import { capabilitiesOf, menuState } from "../apps/console/modules/features/vms/detail.js";
 import { orderImages } from "../apps/console/modules/features/vms/create.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -199,7 +199,7 @@ test("every API error code a browser can meet has one plain sentence with a next
     for (const m of src.matchAll(/HttpError\(\s*\d+,\s*"([a-z_]+)"/g)) codes.add(m[1]);
     for (const m of src.matchAll(/uuidParam\(req, "[A-Za-z]+", "([a-z_]+)"\)/g)) codes.add(`${m[1]}_not_found`);
   }
-  for (const code of ["reauth_required", "federation_unknown_instance", "federation_instance_disabled", "payload_too_large", "unsupported_media_type", "bad_request"]) codes.add(code);
+  for (const code of ["not_supported", "reauth_required", "federation_unknown_instance", "federation_instance_disabled", "payload_too_large", "unsupported_media_type", "bad_request"]) codes.add(code);
   // Reached only by host agents (signed) or by Cloud (server to server), never by a browser.
   const NOT_BROWSER = new Set([
     "agent_unauthenticated", "enrolment_invalid", "invalid_public_key", "invalid_result", "job_not_found",
@@ -315,13 +315,25 @@ test("sizes, names, ssh commands and routes", () => {
 test("the actions menu: resize only while stopped, one power action", () => {
   assert.deepEqual(
     { ...menuState({ state: "running" }) },
-    { power: "stop", powerEnabled: true, resizeEnabled: false, snapshotEnabled: true, deleteEnabled: true, changing: false },
+    { power: "stop", powerEnabled: true, resizeEnabled: false, snapshotEnabled: true, deleteEnabled: true, changing: false, resizeShown: true, snapshotShown: true },
   );
   assert.equal(menuState({ state: "stopped" }).power, "start");
   assert.equal(menuState({ state: "stopped" }).resizeEnabled, true);
   assert.equal(menuState({ state: "starting" }).powerEnabled, false);
   assert.equal(menuState({ state: "deleting" }).deleteEnabled, false);
   assert.match(COPY.resizeStopFirst, /Stop the VM/);
+});
+
+test("capabilities are read defensively: no console unless offered, resize and snapshot unless refused", () => {
+  assert.deepEqual(capabilitiesOf({ state: "running" }), { console: false, resize: true, snapshot: true });
+  assert.deepEqual(capabilitiesOf({ state: "running" }, { console: true }), { console: true, resize: true, snapshot: true });
+  // C1e: capabilities on the instance itself win.
+  const proxmox = { state: "stopped", capabilities: { console: false, resize: false, snapshot: false } };
+  assert.deepEqual(capabilitiesOf(proxmox, { console: true }), { console: false, resize: false, snapshot: false });
+  const m = menuState(proxmox, capabilitiesOf(proxmox));
+  assert.equal(m.resizeShown, false);
+  assert.equal(m.snapshotShown, false);
+  assert.equal(capabilitiesOf({ capabilities: { console: "yes" } }).console, false, "only true means a console");
 });
 
 test("launch links: the grant is read from the fragment and the return path stays on the page", () => {

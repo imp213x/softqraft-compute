@@ -74,6 +74,7 @@ export function actionsMenu({ label, items }) {
   const wrap = h("div", { class: "sq-menu" }, button, list);
   const buttons = [];
   for (const item of items) {
+    if (!item) continue;
     if (item.separator) {
       list.append(h("li", { role: "none" }, h("hr")));
       continue;
