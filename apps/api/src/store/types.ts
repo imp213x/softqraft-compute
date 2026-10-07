@@ -278,7 +278,20 @@ export interface StoreTx {
   getHost(id: string): Promise<HostRow | null>;
   getHostByName(name: string): Promise<HostRow | null>;
   listHosts(): Promise<HostRow[]>;
+  /**
+   * Lock a host row for the rest of the transaction (`FOR UPDATE`) and
+   * return it. Every host state change and every job completion takes it.
+   * Lock order: pool, then host, then instance.
+   */
+  lockHost(id: string): Promise<HostRow | null>;
+  /** Write a whole host row. Only under `lockHost` in the same transaction. */
   updateHost(row: HostRow): Promise<void>;
+  /**
+   * Record a verified agent request: set `last_seen_at` and promote
+   * `enrolled` to `active`, in one conditional statement. Never writes any
+   * other state, so it cannot undo a concurrent drain or disable.
+   */
+  touchHost(id: string, now: Date): Promise<HostRow | null>;
   /** Resources held by live instances placed on a host. */
   hostAllocated(hostId: string): Promise<Resources>;
 

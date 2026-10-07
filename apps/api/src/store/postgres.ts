@@ -596,6 +596,22 @@ class PostgresTx implements StoreTx {
     return (await this.rows("SELECT * FROM hosts ORDER BY name")).map(toHost);
   }
 
+  async lockHost(id: string) {
+    const [r] = await this.rows("SELECT * FROM hosts WHERE id = $1 FOR UPDATE", [id]);
+    return r ? toHost(r) : null;
+  }
+
+  async touchHost(id: string, now: Date) {
+    const [r] = await this.rows(
+      `UPDATE hosts SET last_seen_at = $2,
+         state = CASE WHEN state = 'enrolled' THEN 'active' ELSE state END
+        WHERE id = $1
+        RETURNING *`,
+      [id, now],
+    );
+    return r ? toHost(r) : null;
+  }
+
   async updateHost(row: HostRow): Promise<void> {
     await this.c.query(
       `UPDATE hosts SET state = $2, driver = $3, capacity_vcpu = $4, capacity_memory_mb = $5,

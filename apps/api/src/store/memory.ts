@@ -361,6 +361,19 @@ class MemoryTx implements StoreTx {
     return [...this.s.hosts.values()].sort((a, b) => a.name.localeCompare(b.name)).map(clone);
   }
 
+  async lockHost(id: string) {
+    // Transactions already run one at a time here.
+    return this.getHost(id);
+  }
+
+  async touchHost(id: string, now: Date) {
+    const row = this.s.hosts.get(id);
+    if (!row) return null;
+    row.lastSeenAt = new Date(now);
+    if (row.state === "enrolled") row.state = "active";
+    return clone(row);
+  }
+
   async updateHost(row: HostRow): Promise<void> {
     if (!this.s.hosts.has(row.id)) throw new Error("host not found");
     this.s.hosts.set(row.id, clone(row));

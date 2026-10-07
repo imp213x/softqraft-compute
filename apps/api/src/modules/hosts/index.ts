@@ -44,7 +44,11 @@ export interface Hosts {
   disable(hostId: string, now: Date): Promise<{ host: HostRow; stopsQueued: number }>;
   /** Back to `active` (or `enrolled` if the host has never been seen). */
   enable(hostId: string): Promise<HostRow>;
-  /** Record a verified agent request: last seen, and `enrolled` becomes `active`. */
+  /**
+   * Record a verified agent request: last seen, and `enrolled` becomes
+   * `active`. Only the host id of `host` is used: the row may be stale, and
+   * the current state (for example `disabled`) is never overwritten.
+   */
   markSeen(tx: StoreTx, host: HostRow, now: Date): Promise<HostRow>;
 }
 
@@ -124,7 +128,7 @@ export function createHosts(deps: {
 
     async drain(hostId) {
       return deps.store.transaction(async (tx) => {
-        const host = await tx.getHost(hostId);
+        const host = await tx.lockHost(hostId);
         if (!host) throw HOST_NOT_FOUND();
         if (host.state === "draining") return host;
         if (host.state === "disabled") throw new HttpError(409, "host_disabled", "Host is disabled");
@@ -136,7 +140,9 @@ export function createHosts(deps: {
 
     async disable(hostId, now) {
       return deps.store.transaction(async (tx) => {
-        const host = await tx.getHost(hostId);
+        // The host lock serialises the kill switch with job completions,
+        // which take the same lock (see the instances module).
+        const host = await tx.lockHost(hostId);
         if (!host) throw HOST_NOT_FOUND();
         const next: HostRow = { ...host, state: "disabled" };
         if (host.state !== "disabled") await tx.updateHost(next);
@@ -148,7 +154,7 @@ export function createHosts(deps: {
 
     async enable(hostId) {
       return deps.store.transaction(async (tx) => {
-        const host = await tx.getHost(hostId);
+        const host = await tx.lockHost(hostId);
         if (!host) throw HOST_NOT_FOUND();
         if (host.state === "active" || host.state === "enrolled") return host;
         const next: HostRow = { ...host, state: host.lastSeenAt ? "active" : "enrolled" };
@@ -158,9 +164,9 @@ export function createHosts(deps: {
     },
 
     async markSeen(tx, host, now) {
-      const next: HostRow = { ...host, lastSeenAt: now, state: host.state === "enrolled" ? "active" : host.state };
-      await tx.updateHost(next);
-      return next;
+      const current = await tx.touchHost(host.id, now);
+      if (!current) throw HOST_NOT_FOUND();
+      return current;
     },
   };
 }
