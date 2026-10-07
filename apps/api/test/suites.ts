@@ -8,12 +8,12 @@ import { after, before, describe, it } from "node:test";
 import type { Instance } from "@softqraft/compute-contracts";
 import { DriverError } from "@softqraft/compute-driver";
 import type { ComputeStore } from "../src/store/index.js";
-import { harness, idempotencyKey, instanceOf, PROJECT, type Harness } from "./helpers.js";
+import { harness, idempotencyKey, instanceOf, SI, type Harness } from "./helpers.js";
 
 export type StoreFactory = () => Promise<ComputeStore>;
 
 async function getInstance(h: Harness, id: string): Promise<Instance> {
-  const res = await h.cloud("GET", `/v1/projects/${PROJECT}/instances/${id}`);
+  const res = await h.console("GET", `/console/v1/instances/${id}`);
   assert.equal(res.statusCode, 200, res.body);
   return instanceOf(res);
 }
@@ -44,7 +44,7 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       // The first signed call activates the host; the claim then places pending work.
       const ran = await agent.drain();
       assert.equal(ran, 1);
-      const [early] = (await h.cloud("GET", `/v1/projects/${PROJECT}/instances`)).json().instances as Instance[];
+      const [early] = (await h.console("GET", `/console/v1/instances`)).json().instances as Instance[];
       assert.equal(early!.state, "running");
       assert.equal(early!.hostId, agent.hostId);
       assert.equal(early!.pendingReason, null);
@@ -56,21 +56,21 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       assert.equal((await getInstance(h, created.id)).state, "running");
       assert.equal((await agent.driver.status(created.id)).power, "running");
 
-      const stop = await h.cloud("POST", `/v1/projects/${PROJECT}/instances/${created.id}/actions`, { action: "stop" });
+      const stop = await h.console("POST", `/console/v1/instances/${created.id}/actions`, { action: "stop" });
       assert.equal(stop.statusCode, 202, stop.body);
       assert.equal(instanceOf(stop).state, "stopping");
-      const again = await h.cloud("POST", `/v1/projects/${PROJECT}/instances/${created.id}/actions`, { action: "stop" });
+      const again = await h.console("POST", `/console/v1/instances/${created.id}/actions`, { action: "stop" });
       assert.equal(again.statusCode, 409);
       assert.equal(again.json().error.code, "invalid_state");
       await agent.drain();
       assert.equal((await getInstance(h, created.id)).state, "stopped");
 
-      const start = await h.cloud("POST", `/v1/projects/${PROJECT}/instances/${created.id}/actions`, { action: "start" });
+      const start = await h.console("POST", `/console/v1/instances/${created.id}/actions`, { action: "start" });
       assert.equal(instanceOf(start).state, "starting");
       await agent.drain();
       assert.equal((await getInstance(h, created.id)).state, "running");
 
-      const del = await h.cloud("DELETE", `/v1/projects/${PROJECT}/instances/${created.id}`);
+      const del = await h.console("DELETE", `/console/v1/instances/${created.id}`);
       assert.equal(del.statusCode, 202);
       assert.equal(instanceOf(del).state, "deleting");
       await agent.drain();
@@ -78,14 +78,14 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       assert.equal((await agent.driver.status(created.id)).power, "absent");
 
       // Deleted instances leave the list, and their address is free again.
-      const list = (await h.cloud("GET", `/v1/projects/${PROJECT}/instances`)).json().instances as Instance[];
+      const list = (await h.console("GET", `/console/v1/instances`)).json().instances as Instance[];
       assert.deepEqual(list.map((i) => i.spec.name), ["early"]);
       const reuse = instanceOf(await h.createInstance({ name: "after-delete" }));
       assert.equal(reuse.privateIp, "10.30.0.3");
       await agent.drain();
 
       // Clean up for the next tests.
-      for (const i of [early!, reuse]) await h.cloud("DELETE", `/v1/projects/${PROJECT}/instances/${i.id}`);
+      for (const i of [early!, reuse]) await h.console("DELETE", `/console/v1/instances/${i.id}`);
       await agent.drain();
     });
 
@@ -93,7 +93,7 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       const agentless = await harness({ store: await makeStore() });
       try {
         const inst = instanceOf(await agentless.createInstance({ name: "lonely" }));
-        const del = await agentless.cloud("DELETE", `/v1/projects/${PROJECT}/instances/${inst.id}`);
+        const del = await agentless.console("DELETE", `/console/v1/instances/${inst.id}`);
         assert.equal(del.statusCode, 202);
         assert.equal(instanceOf(del).state, "deleted");
       } finally {
@@ -121,7 +121,7 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       assert.equal(second.statusCode, 200);
       assert.equal(second.headers["idempotent-replayed"], "true");
       assert.equal(instanceOf(first).id, instanceOf(second).id);
-      const list = (await h.cloud("GET", `/v1/projects/${PROJECT}/instances`)).json().instances as Instance[];
+      const list = (await h.console("GET", `/console/v1/instances`)).json().instances as Instance[];
       assert.equal(list.filter((i) => i.spec.name === "idem").length, 1);
     });
 
@@ -248,7 +248,7 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       assert.equal(jobs[0]!.attempt, 3);
       assert.equal(jobs[0]!.lastError, "broken");
       // An errored instance can be deleted.
-      const del = await h.cloud("DELETE", `/v1/projects/${PROJECT}/instances/${inst.id}`);
+      const del = await h.console("DELETE", `/console/v1/instances/${inst.id}`);
       assert.equal(instanceOf(del).state, "deleting");
       await agent.drain();
       assert.equal((await getInstance(h, inst.id)).state, "deleted");
@@ -358,10 +358,14 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
         const rightName = await h.app.inject({ method: "POST", url: "/v1/agent/enrol", payload: body(bound.token, "host-c") });
         assert.equal(rightName.statusCode, 201, "a refused attempt does not burn the token");
 
-        const short = await h.services.hosts.createEnrolmentToken({ ttlSeconds: 60, now: h.clock.now() });
-        h.clock.advance(60);
+        const short = await h.services.hosts.createEnrolmentToken({ now: h.clock.now() });
+        h.clock.advance(1799);
+        const t3 = await h.services.hosts.createEnrolmentToken({ now: h.clock.now() });
+        h.clock.advance(1);
         const expired = await h.app.inject({ method: "POST", url: "/v1/agent/enrol", payload: body(short.token, "host-d") });
-        assert.equal(expired.statusCode, 401);
+        assert.equal(expired.statusCode, 401, "dead after exactly 30 minutes");
+        const fresh = await h.app.inject({ method: "POST", url: "/v1/agent/enrol", payload: body(t3.token, "host-d") });
+        assert.equal(fresh.statusCode, 201, "alive 1 second in");
 
         const t2 = await h.services.hosts.createEnrolmentToken({ now: h.clock.now() });
         const dup = await h.app.inject({ method: "POST", url: "/v1/agent/enrol", payload: body(t2.token, "host-a") });
@@ -397,21 +401,19 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
         const repeat = await agent.request("POST", "/v1/agent/usage", { samples });
         assert.deepEqual(repeat.json(), { accepted: 0, duplicates: 3 });
 
-        const usage = await h.cloud(
-          "GET",
-          `/v1/projects/${PROJECT}/usage?from=2026-10-07T00:00:00.000Z&to=2026-10-08T00:00:00.000Z`,
+        const usage = await h.console("GET", `/console/v1/usage?from=2026-10-07T00:00:00.000Z&to=2026-10-08T00:00:00.000Z`,
         );
         assert.equal(usage.statusCode, 200, usage.body);
         assert.deepEqual(usage.json().records, [
           {
-            projectId: PROJECT,
+            serviceInstanceId: SI,
             hourStart: "2026-10-07T10:00:00.000Z",
             vcpuHours: (2 * 2400) / 3600,
             memoryGbHours: (2 * 2400) / 3600,
             diskGbHours: (20 * 2400) / 3600,
           },
           {
-            projectId: PROJECT,
+            serviceInstanceId: SI,
             hourStart: "2026-10-07T11:00:00.000Z",
             vcpuHours: (2 * 600) / 3600,
             memoryGbHours: (2 * 600) / 3600,

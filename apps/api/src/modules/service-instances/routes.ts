@@ -7,7 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { ProvisionServiceInstanceRequest } from "@softqraft/compute-contracts";
 import { jsonBody, type Clock } from "../../lib/http.js";
 import { serviceInstanceParam } from "../../lib/params.js";
-import type { ServiceInstances } from "./index.js";
+import { tenantIdOf, type ServiceInstances } from "./index.js";
 
 export function registerServiceInstanceRoutes(
   app: FastifyInstance,
@@ -21,6 +21,7 @@ export function registerServiceInstanceRoutes(
     const { outcome, serviceInstance } = await serviceInstances.provision(id, body, clock());
     return reply.status(outcome === "created" ? 201 : 200).send({
       serviceInstanceId: serviceInstance.id,
+      mediaTenantId: tenantIdOf(serviceInstance.id),
       status: serviceInstance.status,
       connection: { gatewayUrl: deps.publicUrl, regionId: serviceInstance.regionId },
     });
@@ -30,6 +31,7 @@ export function registerServiceInstanceRoutes(
     const row = await serviceInstances.require(serviceInstanceParam(req));
     return {
       serviceInstanceId: row.id,
+      mediaTenantId: tenantIdOf(row.id),
       status: row.status,
       origin: "cloud",
       cloudOrganisationId: row.cloudOrganisationId,

@@ -53,7 +53,9 @@ export function registerCloudUsageRoutes(
   app.get("/cloud/v1/service-instances/:serviceInstanceId/usage", async (req) => {
     const si = await deps.serviceInstances.require(serviceInstanceParam(req));
     const { from, to } = range(req, deps.clock);
-    return report(deps.usage, si.id, from, to);
+    // Cloud reads the records from `usage` (C1c adapter).
+    const { records, ...rest } = await report(deps.usage, si.id, from, to);
+    return { ...rest, usage: records };
   });
 }
 

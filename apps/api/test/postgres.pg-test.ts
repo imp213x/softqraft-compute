@@ -12,7 +12,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { after, describe, it } from "node:test";
 import pg from "pg";
 import { loadMigrations, migrate, PostgresComputeStore } from "../src/store/index.js";
-import { harness, idempotencyKey, instanceOf, PROJECT } from "./helpers.js";
+import { harness, idempotencyKey, instanceOf } from "./helpers.js";
 import { behaviourSuite } from "./suites.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -123,7 +123,7 @@ describe("postgres-only guarantees", () => {
       // Twelve creates, each a full transaction on its own pooled connection.
       const results = await Promise.all(
         Array.from({ length: 12 }, (_, i) =>
-          h.createInstance({ name: `race-${i}`, vcpu: 1, memoryMb: 512, diskGb: 10 }, idempotencyKey(), PROJECT),
+          h.createInstance({ name: `race-${i}`, vcpu: 1, memoryMb: 512, diskGb: 10 }, idempotencyKey()),
         ),
       );
       const created = results.filter((r) => r.statusCode === 201).length;

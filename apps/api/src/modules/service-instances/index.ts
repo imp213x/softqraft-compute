@@ -8,6 +8,7 @@
  * different organisation or project is a conflict.
  */
 
+import { createHash } from "node:crypto";
 import type { ProvisionServiceInstanceRequest } from "@softqraft/compute-contracts";
 import { ERROR_CODES } from "@softqraft/federation";
 import { HttpError } from "../../lib/errors.js";
@@ -34,6 +35,16 @@ export interface ServiceInstances {
   health(id: string, now: Date): Promise<{ status: HealthStatus; checkedAt: string }>;
 }
 
+/**
+ * The tenant id reported in the contract's `mediaTenantId` field (§3.1,
+ * §7.1). The field keeps the contract's name; the value follows the
+ * contract's rule for new tenants: `cld_` + the first 12 hex characters of
+ * sha256(serviceInstanceId). It is derived, so it never changes.
+ */
+export function tenantIdOf(serviceInstanceId: string): string {
+  return `cld_${createHash("sha256").update(serviceInstanceId, "utf8").digest("hex").slice(0, 12)}`;
+}
+
 export const unknownInstance = () =>
   new HttpError(404, ERROR_CODES.UNKNOWN_INSTANCE, "Unknown service instance");
 
@@ -53,7 +64,7 @@ export function createServiceInstances(deps: { store: ComputeStore; regionId: st
   return {
     async provision(id, body, now) {
       if (body.regionId !== deps.regionId) {
-        throw new HttpError(400, "validation_failed", "Region is not available");
+        throw new HttpError(400, "validation_failed", `regionId must be ${deps.regionId}`);
       }
       return store.transaction(async (tx) => {
         const draft: ServiceInstanceRow = {
