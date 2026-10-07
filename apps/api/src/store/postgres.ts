@@ -207,11 +207,12 @@ class PostgresTx implements StoreTx {
     };
   }
 
-  async insertServiceInstance(row: ServiceInstanceRow): Promise<void> {
-    await this.c.query(
+  async insertServiceInstance(row: ServiceInstanceRow): Promise<boolean> {
+    const result = await this.c.query(
       `INSERT INTO service_instances (id, cloud_organisation_id, cloud_project_id, display_name, region_id,
          status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id) DO NOTHING`,
       [
         row.id,
         row.cloudOrganisationId,
@@ -223,6 +224,7 @@ class PostgresTx implements StoreTx {
         row.updatedAt,
       ],
     );
+    return result.rowCount === 1;
   }
 
   async getServiceInstance(id: string): Promise<ServiceInstanceRow | null> {

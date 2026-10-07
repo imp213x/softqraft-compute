@@ -98,9 +98,10 @@ class MemoryTx implements StoreTx {
     return usage;
   }
 
-  async insertServiceInstance(row: ServiceInstanceRow): Promise<void> {
-    if (this.s.serviceInstances.has(row.id)) throw new Error("service instance exists");
+  async insertServiceInstance(row: ServiceInstanceRow): Promise<boolean> {
+    if (this.s.serviceInstances.has(row.id)) return false;
     this.s.serviceInstances.set(row.id, clone(row));
+    return true;
   }
 
   async getServiceInstance(id: string): Promise<ServiceInstanceRow | null> {

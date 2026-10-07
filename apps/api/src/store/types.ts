@@ -207,7 +207,8 @@ export interface StoreTx {
   lockPool(): Promise<PoolUsage>;
 
   // Service instances (§3.1)
-  insertServiceInstance(row: ServiceInstanceRow): Promise<void>;
+  /** Insert a service instance. False when one with this id already exists. */
+  insertServiceInstance(row: ServiceInstanceRow): Promise<boolean>;
   getServiceInstance(id: string): Promise<ServiceInstanceRow | null>;
 
   // Idempotency
