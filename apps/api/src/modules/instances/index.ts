@@ -403,6 +403,10 @@ export function createInstances(deps: InstancesDeps): Instances {
 
     async act(serviceInstanceId, id, action, now) {
       return store.transaction(async (tx) => {
+        // A resize reserves pool capacity: take the pool lock before reading
+        // the instance, so the size and state it checks are current
+        // (lock order: pool, host, instance).
+        if (action.action === "resize") await tx.lockPool();
         const row = await owned(tx, serviceInstanceId, id);
         if (action.action === "resize") return toInstance(await resize(tx, row, action, now));
         const [from, to] =
@@ -434,6 +438,11 @@ export function createInstances(deps: InstancesDeps): Instances {
 
     async createSnapshot(serviceInstanceId, id, name, now) {
       return store.transaction(async (tx) => {
+        // Pool lock first, then read the instance: a concurrent resize holds
+        // the same lock, so the state and disk size checked here are the
+        // ones the reservation is made against (lock order: pool, host,
+        // instance).
+        await tx.lockPool();
         const row = await owned(tx, serviceInstanceId, id);
         if ((row.state !== "running" && row.state !== "stopped") || !row.hostId) throw conflict(row.state, "snapshot");
         await requireHostEnabled(tx, row);
