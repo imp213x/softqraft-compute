@@ -45,10 +45,11 @@ export type ClaimResponse = z.infer<typeof ClaimResponse>;
 export const HeartbeatResponse = z.object({ leaseExpiresAt: IsoDateTime });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
-export const JobCompleteRequest = z
+/** Heartbeat and complete name the attempt the agent holds. */
+export const JobAttemptRequest = z
   .object({ attempt: z.number().int().min(1) })
   .strict();
-export type JobCompleteRequest = z.infer<typeof JobCompleteRequest>;
+export type JobAttemptRequest = z.infer<typeof JobAttemptRequest>;
 
 export const JobFailRequest = z
   .object({
