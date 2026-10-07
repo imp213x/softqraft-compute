@@ -1,6 +1,6 @@
 # Compute API reference
 
-Version `0.1.0` (C1b). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
+Version `0.1.0` (C1e). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
 
 Errors always use one envelope:
 
@@ -242,7 +242,8 @@ Asks the host agent for a short-lived console ticket and waits for it, for up to
 - The instance must be `running` (**409 `invalid_state`**), on a host that is not disabled (**409 `host_disabled`**).
 - **502 `console_unavailable`** when the agent fails the job.
 - **504 `console_timeout`** when it does not answer in time; the job is then cancelled and the ticket is never issued.
-- The API never holds hypervisor credentials. How the browser connects with the ticket comes with C1d and C1e.
+- The API never holds hypervisor credentials.
+- The Proxmox driver offers no console in C1 (`capabilities.console` is false, so the request is **409 `not_supported`**); a console relay comes later.
 
 ### `GET /console/v1/images`
 

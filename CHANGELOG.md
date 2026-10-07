@@ -6,6 +6,16 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 
 ### Added
 
+- C1e: the host agent and the Proxmox driver:
+  - `@softqraft/compute-host-agent` (`apps/host-agent`, Node 24): configuration from `/etc/softqraft/compute-agent.env` validated with zod; an Ed25519 host key (0600) and the enrolment record in `/var/lib/softqraft-compute-agent` (0700); first-run enrolment with the one-time token, then the token is blanked in the env file or the operator is told to remove it; a loop that claims, verifies (`verifyJob`), runs and reports jobs, heartbeating inside the 120 s lease, with exponential backoff while the API is unreachable; usage samples every 60 s; structured logs without secrets; graceful SIGTERM.
+  - Dry run (`COMPUTE_AGENT_DRY_RUN=true`): jobs are verified, Proxmox writes are logged without secrets and never sent, and each job is failed with `dry_run`.
+  - Network guard: the agent runs no job unless the host's FORWARD rules block outbound SMTP and forwarding to production (`network_guard_missing`).
+  - `@softqraft/compute-driver-proxmox`: a Proxmox VE 8 HTTP API client with `PVEAPIToken` authentication and TLS pinned to `PROXMOX_TLS_FINGERPRINT`; fences checked before every call (VMIDs 2000-2999 and templates 9000-9099, the pool, the storage, the bridge `vmbr10`, the node, an endpoint and parameter list); `ProxmoxDriver` with create (full clone, cores and memory, `net0` with the firewall, cloud-init, IP and MAC filtering with the `ipfilter-net0` ipset, disk resize, start), start, graceful stop, delete with purge, resize, snapshots, status and list, all idempotent; stable, secret-free error codes; `ensureImages` for Debian 12 and Ubuntu 24.04 templates from vendor cloud images verified against the vendor's checksum lists.
+  - `deploy/host-agent`: a hardened systemd unit, `install.sh` (non-destructive) and `compute-agent.env.example`.
+  - `@softqraft/compute-proxmox-fake`: a test-only fake Proxmox API that checks the token and records every call.
+  - `HypervisorDriver.capabilities` (`console`, `resize`, `snapshot`) and `list()`. Instances carry their host driver's `capabilities`; the API refuses a resize, snapshot or console the driver cannot do with **409 `not_supported`**.
+  - The API knows the `proxmox` driver (enrolment accepts it). Its capabilities in C1: no console (it needs a relay that comes later), resize and snapshots.
+
 - C1b: Compute is a federated provider of cloud-federation-v1, like Realtime Media:
   - Service instances (§3.1, §3.4, §7.1): `PUT`, `GET` and `health` under `/cloud/v1/service-instances/:id`, Cloud-signed with audience `compute`. Responses carry the contract's `mediaTenantId` field (`cld_` + 12 hex of sha256(serviceInstanceId)). `regionId` must be `COMPUTE_REGION_ID` (default `eu-central`).
   - Console launches (§3.2) and redemption (§4): one-time `sqlg_` grants, `sq_console_session` cookies (8 hours, HttpOnly, SameSite=Strict, `Path=/console`), sessions scoped to one service instance and a role (admin, developer, viewer). Viewers are read-only.
