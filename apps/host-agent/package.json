@@ -1,0 +1,35 @@
+{
+  "name": "@softqraft/compute-host-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SoftQraft Compute host agent: pulls signed jobs and runs them on Proxmox.",
+  "license": "UNLICENSED",
+  "author": "SoftQraft Labs Ltd.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts' 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@softqraft/compute-contracts": "workspace:*",
+    "@softqraft/compute-driver": "workspace:*",
+    "@softqraft/compute-driver-proxmox": "workspace:*",
+    "@softqraft/compute-jobs": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@softqraft/compute-proxmox-fake": "workspace:*",
+    "@softqraft/federation": "workspace:*",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.4",
+    "typescript": "^5.9.3"
+  }
+}

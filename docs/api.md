@@ -1,6 +1,6 @@
 # Compute API reference
 
-Version `0.1.0` (C1b). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
+Version `0.1.0` (C1e). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
 
 Errors always use one envelope:
 
@@ -175,8 +175,18 @@ The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, a
 ```json
 { "id": "uuid", "serviceInstanceId": "…", "spec": { … }, "pendingSize": null, "state": "provisioning",
   "pendingReason": null, "hostId": "uuid", "privateIp": "10.30.0.2",
+  "capabilities": { "console": false, "resize": true, "snapshot": true },
   "createdAt": "ISO-8601", "updatedAt": "ISO-8601" }
 ```
+
+`capabilities` says what the driver on the instance's host supports, so the console can hide the rest. All three are `false` while the instance has no host.
+
+| Driver | `console` | `resize` | `snapshot` |
+|---|---|---|---|
+| `fake` (tests) | true | true | true |
+| `proxmox` (C1) | **false**: the browser console needs a relay that comes after C1 | true | true |
+
+A resize, snapshot or console request for an instance whose driver lacks the capability is **409 `not_supported`**.
 
 `spec` is the size the instance has now. `pendingSize` is `{ "vcpu", "memoryMb", "diskGb" }` while a resize is in progress, otherwise `null`.
 
@@ -232,7 +242,8 @@ Asks the host agent for a short-lived console ticket and waits for it, for up to
 - The instance must be `running` (**409 `invalid_state`**), on a host that is not disabled (**409 `host_disabled`**).
 - **502 `console_unavailable`** when the agent fails the job.
 - **504 `console_timeout`** when it does not answer in time; the job is then cancelled and the ticket is never issued.
-- The API never holds hypervisor credentials. How the browser connects with the ticket comes with C1d and C1e.
+- The API never holds hypervisor credentials.
+- The Proxmox driver offers no console in C1 (`capabilities.console` is false, so the request is **409 `not_supported`**); a console relay comes later.
 
 ### `GET /console/v1/images`
 
@@ -342,7 +353,7 @@ A disabled host still authenticates, so that it can run the kill switch's stops 
 
 Errors:
 - **401 `enrolment_invalid`**;
-- **400 `unknown_driver`** (only `fake` until C1e) or **400 `invalid_public_key`**;
+- **400 `unknown_driver`** (the API knows `fake` and `proxmox`) or **400 `invalid_public_key`**;
 - **409 `host_name_taken`**.
 
 ### `POST /v1/agent/jobs/claim`

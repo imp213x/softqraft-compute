@@ -1,15 +1,12 @@
 {
-  "name": "@softqraft/compute-jobs",
+  "name": "@softqraft/compute-proxmox-fake",
   "version": "0.1.0",
   "private": true,
-  "description": "Job envelopes, canonical JSON and Ed25519 signing for the Compute API and host agent.",
+  "description": "Test-only fake Proxmox VE HTTPS API that records every call. Never shipped to a host.",
   "license": "UNLICENSED",
   "author": "SoftQraft Labs Ltd.",
   "type": "module",
   "sideEffects": false,
-  "files": [
-    "dist"
-  ],
   "engines": {
     "node": ">=24"
   },
@@ -23,11 +20,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test 'src/**/*.test.ts'"
-  },
-  "dependencies": {
-    "@softqraft/compute-contracts": "workspace:*"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

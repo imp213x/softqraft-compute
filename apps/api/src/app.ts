@@ -111,6 +111,7 @@ export function buildServices(deps: AppDeps): Services {
     defaultDiskGb: config.defaultDiskGb,
     consoleWaitMs: config.consoleWaitSeconds * 1000,
     sleep: deps.sleep,
+    driverCapabilities: (name) => drivers.capabilities(name),
     jobs: () => {
       if (!jobs) throw new Error("jobs module is not ready");
       return jobs;

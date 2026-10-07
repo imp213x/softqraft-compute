@@ -1,8 +1,8 @@
 {
-  "name": "@softqraft/compute-jobs",
+  "name": "@softqraft/compute-driver-proxmox",
   "version": "0.1.0",
   "private": true,
-  "description": "Job envelopes, canonical JSON and Ed25519 signing for the Compute API and host agent.",
+  "description": "Proxmox VE 8 HTTP API client and HypervisorDriver for the Compute host agent.",
   "license": "UNLICENSED",
   "author": "SoftQraft Labs Ltd.",
   "type": "module",
@@ -27,9 +27,12 @@
     "test": "tsx --test 'src/**/*.test.ts'"
   },
   "dependencies": {
-    "@softqraft/compute-contracts": "workspace:*"
+    "@softqraft/compute-contracts": "workspace:*",
+    "@softqraft/compute-driver": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@softqraft/compute-proxmox-fake": "workspace:*",
     "@types/node": "^22.20.1",
     "tsx": "^4.23.4",
     "typescript": "^5.9.3"

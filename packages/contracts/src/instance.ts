@@ -103,6 +103,23 @@ export const IsoDateTime = z.string().datetime({ offset: true });
 export const SERVICE_INSTANCE_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 export const ServiceInstanceId = z.string().regex(SERVICE_INSTANCE_ID_RE, "serviceInstanceId is not valid");
 
+/**
+ * What a hypervisor driver can do beyond create, start, stop and delete.
+ * The API reports them per instance, from its host's driver, so the console
+ * can hide what the driver cannot do.
+ */
+export const DriverCapabilities = z
+  .object({ console: z.boolean(), resize: z.boolean(), snapshot: z.boolean() })
+  .strict();
+export type DriverCapabilities = z.infer<typeof DriverCapabilities>;
+
+/** Reported for an instance that has no host yet: nothing can be done to it there. */
+export const NO_CAPABILITIES: Readonly<DriverCapabilities> = Object.freeze({
+  console: false,
+  resize: false,
+  snapshot: false,
+});
+
 /** vCPU, memory and disk: what a resize changes. */
 export const InstanceSizeSchema = z.object({ vcpu: Vcpu, memoryMb: MemoryMb, diskGb: DiskGb }).strict();
 
@@ -118,6 +135,11 @@ export const Instance = z.object({
   pendingReason: z.string().nullable(),
   hostId: Uuid.nullable(),
   privateIp: z.string().ip({ version: "v4" }).nullable(),
+  /**
+   * What its host's driver supports (`console`, `resize`, `snapshot`), so
+   * the console can hide the rest. All false while the instance has no host.
+   */
+  capabilities: DriverCapabilities.default({ ...NO_CAPABILITIES }),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
