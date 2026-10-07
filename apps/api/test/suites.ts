@@ -557,6 +557,10 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
         const leased = await agent.claim();
         assert.equal(leased?.envelope.instanceId, late.id, "the create is mid-flight");
 
+        // Queued but not yet claimed when the switch is thrown.
+        const queuedSnap = await h.console("POST", `/console/v1/instances/${b.id}/snapshots`, { name: "queued" });
+        assert.equal(queuedSnap.statusCode, 202, queuedSnap.body);
+
         const off = await h.admin("POST", `/admin/v1/fleet/hosts/${agent.hostId}/disable`);
         assert.equal(off.statusCode, 200, off.body);
         assert.equal(off.json().stopsQueued, 2);
@@ -570,7 +574,7 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
 
         const types: string[] = [];
         for (let job = await agent.step(); job; job = await agent.step()) types.push(job.job.envelope.type);
-        assert.deepEqual(types, ["stop", "stop", "stop"]);
+        assert.deepEqual(types, ["stop", "stop", "stop"], "a disabled host claims stop jobs only");
         for (const i of [a, b, late]) assert.equal((await getInstance(h, i.id)).state, "stopped");
 
         const start = await h.console("POST", `/console/v1/instances/${a.id}/actions`, { action: "start" });
@@ -585,6 +589,8 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
         await agent.drain();
         assert.equal((await getInstance(h, a.id)).state, "running");
         assert.equal((await getInstance(h, b.id)).state, "stopped", "enable does not restart anything");
+        const snaps = (await h.console("GET", `/console/v1/instances/${b.id}/snapshots`)).json().snapshots;
+        assert.equal(snaps[0].state, "available", "the held-back snapshot ran after enable");
       } finally {
         await h.close();
         await h.store.close();
