@@ -1,6 +1,6 @@
 # Compute API reference
 
-Version `0.1.0` (C1e). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
+Version `0.1.0` (C1d and C1e). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
 
 Errors always use one envelope:
 
@@ -15,6 +15,7 @@ Unknown paths return **404 `not_found`**. Request bodies are limited to 64 KiB (
 | Prefix | Caller | Authentication |
 |---|---|---|
 | `/cloud/v1/…` | SoftQraft Cloud (server) | Cloud-signed request, [cloud-federation-v1](https://github.com/imp213x/softqraft-federation/blob/main/docs/cloud-federation-v1.md) §2, audience **`compute`** |
+| `/console/`, `/admin/` | Browsers | The Console and staff fleet pages (static files, see [Pages](#pages)) |
 | `/console/v1/…` | Customer browser, same origin | Console session cookie from a §3.2 launch |
 | `/admin/v1/…` | Staff browser, same origin | Operator session cookie from a §8.2 launch |
 | `/v1/agent/…` | Host agent | Host-signed (`enrol` uses a one-time token) |
@@ -115,7 +116,7 @@ The records are in **`usage`**. The range defaults to the last 24 hours and may 
 
 ## Browser sessions
 
-The Console shell at `/console/launch` and the Admin shell at `/admin/launch` arrive with the Console UI in C1d. The grant travels only in the URL fragment. The page removes it, then redeems it.
+Launch URLs open `/console/launch` or `/admin/launch`. The grant travels only in the URL fragment: the page removes it from the address bar, then redeems it and goes to the `returnPath` (only `/console/` or `/admin/` and their `#/` routes; anything else opens the page's start).
 
 | | Console | Admin (operator) |
 |---|---|---|
@@ -138,9 +139,11 @@ Rules for both:
   Otherwise the response is **401 `unauthorized`**.
 - **Writes** are every method except GET and HEAD. They must carry this service's `Origin` (**403 `cross_origin`**) and a role that may write (**403 `forbidden`**).
 - An operator write on a session older than 15 minutes is **403 `reauth_required`**, recorded as `auth.operator_reauth_required`.
+- **The 15-minute rule for Console deletes.** `DELETE` of an instance or a snapshot on a Console session whose sign-in (its `createdAt`) is 15 minutes old or more is **403 `reauth_required`**, recorded as `auth.console_reauth_required`. Nothing changes. A new Cloud launch opens a new session and resets the time. Other Console writes are not under the rule. The role check comes first: a viewer gets **403 `forbidden`**.
+- `GET /console/v1/auth/status` and `GET /admin/v1/auth/status` need no session and return `{ "signInUrl" }`: `CLOUD_ORIGIN` + `/cloud/open/compute` for the Console and `CLOUD_ORIGIN` + `/dashboard/services` (Ops → Service operations) for Admin, or `null` when `CLOUD_ORIGIN` is unset. Admin's also returns `hostRunbookUrl` (`COMPUTE_HOST_RUNBOOK_URL`). The pages send people there to sign in again.
 - `POST …/auth/logout` (same origin) ends the session and clears the cookie.
 - `GET …/auth/me` returns the principal, role, session times and `freshUntil`; the Console version adds the service instance.
-- Security events are recorded without secrets: `auth.cloud_launch`, `auth.operator_launch`, `auth.operator_reauth_required`, and one `fleet.*` event per fleet write.
+- Security events are recorded without secrets: `auth.cloud_launch`, `auth.operator_launch`, `auth.operator_reauth_required`, `auth.console_reauth_required`, and one `fleet.*` event per fleet write.
 
 ## Console routes (`/console/v1`, Console session)
 
@@ -194,11 +197,17 @@ A resize, snapshot or console request for an instance whose driver lacks the cap
 
 ### `GET /console/v1/instances`, `GET /console/v1/instances/:id`
 
-`{ "instances": Instance[] }`, oldest first, without deleted ones; `{ "instance": Instance }`, including a deleted one.
+`{ "instances": Instance[] }`, oldest first, without deleted ones.
+
+`GET /console/v1/instances/:id` returns `{ "instance": Instance }`, including a deleted instance. The Console shows its console button only when `instance.capabilities.console` is true (the `fake` driver offers one; the C1 Proxmox driver does not).
+
+### `GET /console/v1/instances/:id/usage`
+
+**200** `{ "usage": { "vcpuHours", "memoryGbHours", "diskGbHours" } }`: what this instance has used over its life, from its samples, with the same metering rules as `GET /console/v1/usage`. Metered, not priced.
 
 ### `DELETE /console/v1/instances/:id`
 
-**202** `{ "instance" }` in `deleting` (or `deleted` at once if it was never placed). Allowed from `pending`, `running`, `stopped` and `error`; otherwise **409 `invalid_state`**. Its snapshots go with it.
+**202** `{ "instance" }` in `deleting` (or `deleted` at once if it was never placed). Allowed from `pending`, `running`, `stopped` and `error`; otherwise **409 `invalid_state`**. Its snapshots go with it. Under the 15-minute rule (**403 `reauth_required`**, see [Browser sessions](#browser-sessions)).
 
 ### `POST /console/v1/instances/:id/actions`
 
@@ -226,7 +235,7 @@ Other errors: **409 `invalid_state`**, and **409 `host_disabled`** for start or 
   - The name is a lowercase label of 1 to 40 characters, unique among the instance's live snapshots (**409 `snapshot_name_taken`**).
   - The instance must be `running` or `stopped` (**409 `invalid_state`**).
   - A snapshot holds the instance's disk size against the pool's disk cap (**409 `quota_exceeded`**) and the host's disk (**409 `no_host_capacity`**) until it is deleted.
-- `DELETE /console/v1/instances/:id/snapshots/:snapshotId` returns **202** `{ "snapshot" }` in `deleting`.
+- `DELETE /console/v1/instances/:id/snapshots/:snapshotId` returns **202** `{ "snapshot" }` in `deleting`. Under the 15-minute rule (**403 `reauth_required`**).
   - It is allowed from `available` and `error`.
   - An unknown snapshot is **404 `snapshot_not_found`**.
 
@@ -239,15 +248,44 @@ Asks the host agent for a short-lived console ticket and waits for it, for up to
 **200** `{ "console": { "protocol": "vnc", "ticket": "…", "expiresAt": "ISO-8601" } }` with `Cache-Control: no-store`.
 
 - The ticket is handed over once and never stored afterwards.
-- The instance must be `running` (**409 `invalid_state`**), on a host that is not disabled (**409 `host_disabled`**).
+- The instance must be `running` (**409 `invalid_state`**), on a host whose driver offers a console (**409 `not_supported`**, see `capabilities.console`) and that is not disabled (**409 `host_disabled`**).
 - **502 `console_unavailable`** when the agent fails the job.
 - **504 `console_timeout`** when it does not answer in time; the job is then cancelled and the ticket is never issued.
 - The API never holds hypervisor credentials.
 - The Proxmox driver offers no console in C1 (`capabilities.console` is false, so the request is **409 `not_supported`**); a console relay comes later.
+- A browser viewer for the ticket is not built yet.
 
 ### `GET /console/v1/images`
 
 **200** `{ "images": Image[] }`. C1 offers `debian-12` and `ubuntu-24.04`.
+
+### `GET /console/v1/sizes`
+
+The Create screen's presets, built from the pilot caps:
+
+```json
+{ "sizes": [
+    { "id": "small",  "name": "Small",  "vcpu": 1, "memoryMb": 1024, "diskGb": 16 },
+    { "id": "medium", "name": "Medium", "vcpu": 2, "memoryMb": 2048, "diskGb": 16 },
+    { "id": "large",  "name": "Large",  "vcpu": 2, "memoryMb": 4096, "diskGb": 16 } ],
+  "defaultSizeId": "small" }
+```
+
+`diskGb` is `COMPUTE_DEFAULT_DISK_GB`. A preset that an empty pool could not hold (over `COMPUTE_POOL_MAX_VCPU`, `…_MEMORY_MB` or `…_DISK_GB`, or the per-instance limits) is left out; `defaultSizeId` is the first one left, or `null`.
+
+### Saved SSH keys
+
+The Create screen remembers a key after its first use. Keys belong to the service instance. Only public keys are stored.
+
+- `GET /console/v1/ssh-keys` returns **200** `{ "sshKeys": SshKey[] }`, newest first.
+- `POST /console/v1/ssh-keys` `{ "publicKey": "ssh-ed25519 AAAA… me@laptop", "name"?: "Laptop" }` returns **201** `{ "sshKey" }`, or **200** with the saved key when this service instance already has it (same fingerprint).
+  - The key is checked from its blob: `ssh-ed25519` (32 bytes), or `ssh-rsa` with a modulus of at least 3072 bits.
+  - **400** `ssh_key_invalid` (not an OpenSSH public key, or the blob does not match its type), `ssh_key_private` (a private key was pasted), `ssh_key_unsupported` (any other type), `ssh_key_too_weak` (RSA under 3072 bits).
+  - **409 `ssh_key_limit`** at 20 keys per service instance.
+  - `name` defaults to the key's comment, or its type.
+- `DELETE /console/v1/ssh-keys/:id` returns **204**; **404 `ssh_key_not_found`** for an unknown key or another service instance's.
+
+`SshKey`: `{ "id", "name", "type": "ssh-ed25519|ssh-rsa", "bits", "fingerprint": "SHA256:…", "publicKey": "<type> <base64>", "createdAt" }`. `publicKey` has no comment. Pass it in `sshPublicKeys` when creating an instance.
 
 ### `GET /console/v1/usage?from=ISO&to=ISO`
 
@@ -308,6 +346,25 @@ Enrolment tokens:
 - are shown once and stored only as SHA-256 hashes;
 - work once and expire after **30 minutes**;
 - when created with a `hostName`, enrol only that name.
+
+## Pages
+
+`apps/console` holds the Console (`/console/`) and staff fleet (`/admin/`) pages: static, framework-free ES modules with no build step, served by the API in the same contexts as their routes (so they exist only when those routes do).
+
+| Path | Serves |
+|---|---|
+| `GET /console/`, `GET /console/launch` | `console.html` (`/console` redirects to `/console/`) |
+| `GET /admin/`, `GET /admin/launch` | `admin.html` |
+| `GET /console/{modules,styles,assets}/*`, `GET /admin/{modules,styles,assets}/*` | Files under `apps/console/` of type `.js`, `.css`, `.svg` or `.png` only. Anything else, a dot segment or a path outside the folder is **404 `not_found`**. |
+
+Every page and file carries `Cache-Control: no-store` (no stale page after a deploy, as in Realtime Media), `nosniff`, `X-Frame-Options: DENY`, `no-referrer`, same-origin opener and resource policies, and this CSP:
+
+```
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self';
+manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
+```
+
+The pages use hash routes: Console `#/` (VMs), `#/new` (create), `#/vm/<id>`; Admin `#/` (hosts), `#/instances`. `pnpm --filter @softqraft/compute-api preview` serves them locally on seeded fake data.
 
 ## Agent routes
 

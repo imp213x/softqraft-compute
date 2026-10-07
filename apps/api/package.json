@@ -17,7 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test 'src/**/*.test.ts' 'test/**/*.test.ts'",
     "test:pg": "tsx --test 'test/**/*.pg-test.ts'",
-    "test:conformance": "tsx --test 'test/**/*.conformance.ts'"
+    "test:conformance": "tsx --test 'test/**/*.conformance.ts'",
+    "preview": "tsx test/preview-server.ts"
   },
   "dependencies": {
     "@softqraft/compute-contracts": "workspace:*",

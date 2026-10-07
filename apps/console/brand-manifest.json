@@ -1,0 +1,42 @@
+{
+  "parent": "https://github.com/imp213x/softqraft_labs",
+  "revision": "4f4840eb954dee1bc166e2178189f70b771e30c3",
+  "headerSource": "src/app/components/Navbar.tsx",
+  "files": [
+    {
+      "source": "src/styles/brand.css",
+      "target": "styles/brand/parent.css",
+      "sha256": "d461602c008f4876db25e1a7e251f8b30ff4f12cd0035c8f126ab4d4bcd698c6"
+    },
+    {
+      "source": "public/brand/png/softqraft-infinity-photo-512.png",
+      "target": "assets/brand/softqraft-infinity-photo-512.png",
+      "sha256": "5968c17fc2e6f8c2e50fa871f0ca442ddf1890156c7e484f7d8c0ed1aa270e2d"
+    },
+    {
+      "source": "public/favicon.svg",
+      "target": "assets/brand/favicon.svg",
+      "sha256": "9601034816e100d93a6ac1d55436f1490c33a844843a76cf820c86bee94e37ac"
+    },
+    {
+      "source": "public/favicon-32.png",
+      "target": "assets/brand/favicon-32.png",
+      "sha256": "51c2f1608ff29aaec7b3e00ae211bb6ec1dbcf74f33b5f02fbb4e537f9fad4f3"
+    },
+    {
+      "source": "public/favicon-16.png",
+      "target": "assets/brand/favicon-16.png",
+      "sha256": "fc6b8b5effbc02abf27eeefdeb9f42bd5a995b2edc9dd37d1db3c8c0e46aa910"
+    },
+    {
+      "source": "public/favicon-180.png",
+      "target": "assets/brand/favicon-180.png",
+      "sha256": "43256cdb51176b7a634ba5eff61defd2938bcfdeb20ae4ed2c784fbbc90c0530"
+    },
+    {
+      "source": "node_modules/tailwindcss/theme.css (selected header/surface tokens)",
+      "target": "styles/brand/parent-shell.css",
+      "sha256": "3f97a1b744756315de72da36d40ccaf93029e40fabf07143c63f363e4f4b2974"
+    }
+  ]
+}

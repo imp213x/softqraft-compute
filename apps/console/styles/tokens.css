@@ -1,0 +1,56 @@
+@import "./brand/parent.css";
+@import "./brand/parent-shell.css";
+
+/**
+ * Compute semantic aliases. The parent owns every brand value, as in
+ * Realtime Media: no independent palette. Status colours are semantic only.
+ */
+
+:root {
+  color-scheme: light;
+
+  --sq-ink: var(--sql-paper);
+  --sq-ink-elev: var(--sql-parent-color-slate-100);
+  --sq-panel: var(--sql-parent-color-white);
+  --sq-panel-2: var(--sql-paper);
+  --sq-border: var(--sql-parent-color-slate-200);
+  --sq-border-strong: var(--sql-parent-color-slate-300);
+
+  --sq-text: var(--sql-text-on-light);
+  --sq-text-muted: var(--sql-text-muted);
+  --sq-text-dim: var(--sql-parent-color-slate-500);
+
+  /* Parent light header: slate actions and an amber accent. */
+  --sq-accent: var(--sql-parent-color-slate-900);
+  --sq-accent-hover: var(--sql-parent-color-slate-700);
+  --sq-accent-dim: var(--sql-parent-color-slate-400);
+  --sq-accent-soft: var(--sql-parent-color-slate-100);
+  --sq-highlight: var(--sql-parent-color-amber-600);
+  --sq-highlight-soft: var(--sql-parent-color-amber-50);
+  /* The focus ring: amber dark enough for 3:1 against white and paper. */
+  --sq-focus: var(--sql-parent-color-amber-700);
+
+  /* Status only */
+  --sq-ok: #2f6b3a;
+  --sq-ok-dim: #edf5ec;
+  --sq-warn: var(--sql-parent-color-amber-700);
+  --sq-warn-dim: var(--sql-parent-color-amber-50);
+  --sq-danger: #a43c36;
+  --sq-danger-dim: #faeeeb;
+  --sq-idle: var(--sql-parent-color-slate-500);
+
+  --sq-radius-sm: 8px;
+  --sq-radius: 12px;
+  --sq-radius-lg: 16px;
+  --sq-radius-pill: 999px;
+
+  --sq-font: var(--sql-parent-font-sans);
+  --sq-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --sq-shadow: 0 16px 48px color-mix(in srgb, var(--sql-ink) 7%, transparent);
+  --sq-shadow-sm: 0 2px 6px color-mix(in srgb, var(--sql-ink) 4%, transparent);
+  --sq-parent-header-height: 88px;
+
+  --sq-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --sq-dur: 180ms;
+}

@@ -74,6 +74,12 @@ export interface InstancesDeps {
   driverCapabilities: (driver: string) => Readonly<DriverCapabilities> | null;
 }
 
+export interface InstanceUsage {
+  vcpuHours: number;
+  memoryGbHours: number;
+  diskGbHours: number;
+}
+
 export interface CreateResult {
   instance: Instance;
   /** True when this was a repeat of an earlier request with the same key. */
@@ -91,6 +97,9 @@ export interface Instances {
   /** Every instance, for staff support. */
   listAll(options?: { includeDeleted?: boolean }): Promise<Instance[]>;
   get(serviceInstanceId: string, id: string): Promise<Instance>;
+  /** An instance and what its host can do for it (the Console detail screen). */
+  /** What one instance has used over its life, in hours. Metered, not priced. */
+  usageOf(serviceInstanceId: string, id: string): Promise<InstanceUsage>;
   act(serviceInstanceId: string, id: string, action: InstanceAction, now: Date): Promise<Instance>;
   remove(serviceInstanceId: string, id: string, now: Date): Promise<Instance>;
   createSnapshot(serviceInstanceId: string, id: string, name: string, now: Date): Promise<Snapshot>;
@@ -460,6 +469,18 @@ export function createInstances(deps: InstancesDeps): Instances {
 
     async get(serviceInstanceId, id) {
       return store.transaction(async (tx) => present(tx, await owned(tx, serviceInstanceId, id)));
+    },
+
+    async usageOf(serviceInstanceId, id) {
+      return store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        const t = await tx.instanceUsageTotals(row.id);
+        return {
+          vcpuHours: t.vcpuSeconds / 3600,
+          memoryGbHours: t.memoryMbSeconds / 1024 / 3600,
+          diskGbHours: t.diskGbSeconds / 3600,
+        };
+      });
     },
 
     async act(serviceInstanceId, id, action, now) {

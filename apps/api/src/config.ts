@@ -11,6 +11,10 @@ import { DEFAULT_DISK_GB, INSTANCE_LIMITS } from "@softqraft/compute-contracts";
 import { loadSigningKey } from "@softqraft/compute-jobs";
 import { assertPilotCidr, type Ipv4Cidr } from "./modules/ipam/index.js";
 
+/** The "Add a host" runbook steps (softqraft_labs myDocs/compute/runbook.md, step 6). */
+export const DEFAULT_HOST_RUNBOOK_URL =
+  "https://github.com/imp213x/softqraft_labs/blob/main/myDocs/compute/runbook.md#6-host-agent";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const bool = (fallback: "true" | "false") =>
@@ -65,6 +69,9 @@ const EnvSchema = z.object({
   CLOUD_FEDERATION_ENABLED: bool("false"),
   CLOUD_FEDERATION_PUBLIC_KEYS: z.string().optional(),
   CLOUD_OPERATOR_LAUNCH_ENABLED: bool("false"),
+  /** SoftQraft Cloud's origin: where "Sign in again" sends people. */
+  CLOUD_ORIGIN: z.string().optional(),
+  COMPUTE_HOST_RUNBOOK_URL: z.string().default(DEFAULT_HOST_RUNBOOK_URL),
 });
 
 export interface PoolCaps {
@@ -101,6 +108,10 @@ export interface ComputeConfig {
   jobLeaseSeconds: number;
   jobEnvelopeTtlSeconds: number;
   maintenanceIntervalSeconds: number;
+  /** SoftQraft Cloud's origin (CLOUD_ORIGIN), for "Sign in again" links; null when unset. */
+  cloudOrigin: string | null;
+  /** Where the fleet page's "Add a host" dialog links for the runbook steps. */
+  hostRunbookUrl: string;
   federation:
     | { enabled: false; operatorLaunch: false }
     | { enabled: true; publicKeys: Map<string, KeyObject>; operatorLaunch: boolean };
@@ -126,18 +137,34 @@ function parseAllowedProjects(raw: string): Set<string> {
   return new Set(ids);
 }
 
-function parsePublicUrl(raw: string | undefined): string | null {
+function parseOrigin(raw: string | undefined, name: string, example: string): string | null {
   if (raw === undefined) return null;
+  const problem = () => new ConfigError(`${name} must be an http or https origin such as ${example}`);
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new ConfigError("COMPUTE_PUBLIC_URL must be an http or https origin such as https://compute.example.com");
+    throw problem();
   }
   if ((url.protocol !== "https:" && url.protocol !== "http:") || url.pathname !== "/" || url.search || url.hash || url.username) {
-    throw new ConfigError("COMPUTE_PUBLIC_URL must be an http or https origin such as https://compute.example.com");
+    throw problem();
   }
   return url.origin;
+}
+
+function parsePublicUrl(raw: string | undefined): string | null {
+  return parseOrigin(raw, "COMPUTE_PUBLIC_URL", "https://compute.example.com");
+}
+
+function parseHttpsUrl(raw: string, name: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ConfigError(`${name} must be an https URL`);
+  }
+  if (url.protocol !== "https:" || url.username || url.password) throw new ConfigError(`${name} must be an https URL`);
+  return url.href;
 }
 
 /** No public URL (the local listener), or plain http on localhost or 127.0.0.1. */
@@ -222,6 +249,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (e.NODE_ENV === "production" && federation.enabled && (!publicUrl || !publicUrl.startsWith("https://"))) {
     throw new ConfigError("COMPUTE_PUBLIC_URL must be an https origin when NODE_ENV=production and federation is on");
   }
+  const cloudOrigin = parseOrigin(e.CLOUD_ORIGIN, "CLOUD_ORIGIN", "https://www.softqraftlabs.com");
+  if (e.NODE_ENV === "production" && federation.enabled && (!cloudOrigin || !cloudOrigin.startsWith("https://"))) {
+    throw new ConfigError("CLOUD_ORIGIN must be an https origin when NODE_ENV=production and federation is on");
+  }
+  const hostRunbookUrl = parseHttpsUrl(e.COMPUTE_HOST_RUNBOOK_URL, "COMPUTE_HOST_RUNBOOK_URL");
   const cookieSecure =
     e.COMPUTE_COOKIE_SECURE !== undefined ? e.COMPUTE_COOKIE_SECURE === "true" : Boolean(publicUrl?.startsWith("https://"));
   // Session cookies may lose `Secure` only for local development: no public
@@ -258,6 +290,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     jobLeaseSeconds: e.COMPUTE_JOB_LEASE_SECONDS,
     jobEnvelopeTtlSeconds: e.COMPUTE_JOB_ENVELOPE_TTL_SECONDS,
     maintenanceIntervalSeconds: e.COMPUTE_MAINTENANCE_INTERVAL_SECONDS,
+    cloudOrigin,
+    hostRunbookUrl,
     federation,
   };
 }

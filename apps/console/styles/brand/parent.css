@@ -1,0 +1,54 @@
+/**
+ * SoftQraft Labs — Brand CSS variables
+ * Mirror of src/app/lib/brand.ts. Import once at the app root.
+ */
+
+:root {
+  /* Iridescent loop stops */
+  --sql-cyan: #00E5FF;
+  --sql-blue: #5B8CFF;
+  --sql-violet: #C966FF;
+  --sql-amber: #FFB347;
+
+  /* Surfaces */
+  --sql-ink: #0B1220;
+  --sql-paper: #F8FAFC;
+  --sql-glass: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --sql-text-on-light: #0F172A;
+  --sql-text-on-dark: #F8FAFC;
+  --sql-text-muted: #64748B;
+
+  /* Composite gradients */
+  --sql-gradient-iridescent: linear-gradient(90deg,
+      var(--sql-cyan) 0%,
+      var(--sql-blue) 25%,
+      var(--sql-violet) 50%,
+      var(--sql-amber) 75%,
+      var(--sql-cyan) 100%);
+
+  --sql-gradient-iridescent-soft: linear-gradient(90deg,
+      rgba(0, 229, 255, 0.18) 0%,
+      rgba(91, 140, 255, 0.18) 25%,
+      rgba(201, 102, 255, 0.18) 50%,
+      rgba(255, 179, 71, 0.18) 75%,
+      rgba(0, 229, 255, 0.18) 100%);
+}
+
+/* Iridescent text utility — pair with `text-transparent bg-clip-text` */
+.sql-text-iridescent {
+  background-image: var(--sql-gradient-iridescent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Photo mark support: keeps transparent assets readable on light and dark surfaces. */
+.sql-mark-glow {
+  filter: drop-shadow(0 1px 1px rgba(11, 18, 32, 0.30)) drop-shadow(0 4px 10px rgba(11, 18, 32, 0.16)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.22));
+}
+
+.dark .sql-mark-glow {
+  filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.35)) drop-shadow(0 0 24px rgba(201, 102, 255, 0.20));
+}

@@ -31,14 +31,33 @@ export function requireSameOriginMutation(req: FastifyRequest, publicUrl: string
   }
 }
 
+/**
+ * The Console and Admin pages' Content Security Policy: everything from this
+ * origin only, no inline script or style, no framing, no plugins, and
+ * connections to this origin only. The pages have no build step and load
+ * only their own files.
+ */
+export const BROWSER_CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self'",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join("; ");
+
 export function applyBrowserSecurityHeaders(reply: { header(name: string, value: string): unknown }): void {
   reply.header("Cache-Control", "no-store");
   reply.header("X-Content-Type-Options", "nosniff");
   reply.header("X-Frame-Options", "DENY");
   reply.header("Referrer-Policy", "no-referrer");
   reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  reply.header(
-    "Content-Security-Policy",
-    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'",
-  );
+  reply.header("Cross-Origin-Opener-Policy", "same-origin");
+  reply.header("Cross-Origin-Resource-Policy", "same-origin");
+  reply.header("Content-Security-Policy", BROWSER_CSP);
 }

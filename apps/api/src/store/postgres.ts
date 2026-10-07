@@ -27,6 +27,7 @@ import type {
   SecurityEventRow,
   ServiceInstanceRow,
   SnapshotRow,
+  SshKeyRow,
   StoreTx,
   UsageRecordRow,
   UsageSampleRow,
@@ -881,6 +882,59 @@ class PostgresTx implements StoreTx {
       memoryMbSeconds: num(r.memory_mb_seconds),
       diskGbSeconds: num(r.disk_gb_seconds),
     }));
+  }
+
+  async instanceUsageTotals(instanceId: string) {
+    const [r] = await this.rows(
+      `SELECT
+         COALESCE(SUM(CASE WHEN power_state = 'running' THEN vcpu::bigint * interval_seconds ELSE 0 END), 0) AS vcpu_seconds,
+         COALESCE(SUM(CASE WHEN power_state = 'running' THEN memory_mb::bigint * interval_seconds ELSE 0 END), 0) AS memory_mb_seconds,
+         COALESCE(SUM(disk_gb::bigint * interval_seconds), 0) AS disk_gb_seconds
+       FROM usage_samples WHERE instance_id = $1`,
+      [instanceId],
+    );
+    return {
+      vcpuSeconds: num(r?.vcpu_seconds ?? 0),
+      memoryMbSeconds: num(r?.memory_mb_seconds ?? 0),
+      diskGbSeconds: num(r?.disk_gb_seconds ?? 0),
+    };
+  }
+
+  async insertSshKey(row: SshKeyRow): Promise<boolean> {
+    const res = await this.c.query(
+      `INSERT INTO ssh_keys (id, service_instance_id, name, type, bits, fingerprint, public_key, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (service_instance_id, fingerprint) DO NOTHING`,
+      [row.id, row.serviceInstanceId, row.name, row.type, row.bits, row.fingerprint, row.publicKey, row.createdAt],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async listSshKeys(serviceInstanceId: string) {
+    const rows = await this.rows(
+      "SELECT * FROM ssh_keys WHERE service_instance_id = $1 ORDER BY created_at DESC, id",
+      [serviceInstanceId],
+    );
+    return rows.map(
+      (r): SshKeyRow => ({
+        id: String(r.id),
+        serviceInstanceId: String(r.service_instance_id),
+        name: String(r.name),
+        type: r.type as SshKeyRow["type"],
+        bits: num(r.bits),
+        fingerprint: String(r.fingerprint),
+        publicKey: String(r.public_key),
+        createdAt: date(r.created_at),
+      }),
+    );
+  }
+
+  async deleteSshKey(serviceInstanceId: string, id: string): Promise<boolean> {
+    const res = await this.c.query("DELETE FROM ssh_keys WHERE service_instance_id = $1 AND id = $2", [
+      serviceInstanceId,
+      id,
+    ]);
+    return (res.rowCount ?? 0) > 0;
   }
 }
 

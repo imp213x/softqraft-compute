@@ -11,8 +11,10 @@
  * exceed the caps together. Snapshots hold disk against the disk cap.
  */
 
-import type { InstanceSpec } from "@softqraft/compute-contracts";
+import { INSTANCE_LIMITS, SIZE_PRESETS, type InstanceSpec, type SizesResponse } from "@softqraft/compute-contracts";
 import type { PoolUsage, StoreTx } from "../../store/index.js";
+
+export { registerConsoleSizeRoutes } from "./routes.js";
 
 export interface PoolCaps {
   maxVcpu: number;
@@ -43,6 +45,21 @@ export interface Quotas {
   reserve(tx: StoreTx, spec: InstanceSpec): Promise<ReserveResult>;
   /** Reserve a change. Only dimensions that grow are checked against the caps. */
   reserveDelta(tx: StoreTx, delta: PoolDelta): Promise<ReserveResult>;
+  /** The size presets an empty pool could hold, each with `diskGb`. */
+  sizes(diskGb: number): SizesResponse;
+}
+
+/**
+ * The presets that fit the pilot caps and the per-instance limits. A preset
+ * that could never be created, even in an empty pool, is not offered.
+ */
+export function sizesFor(caps: PoolCaps, diskGb: number): SizesResponse {
+  const fits = (p: { vcpu: number; memoryMb: number }) =>
+    p.vcpu <= Math.min(caps.maxVcpu, INSTANCE_LIMITS.vcpu.max) &&
+    p.memoryMb <= Math.min(caps.maxMemoryMb, INSTANCE_LIMITS.memoryMb.max) &&
+    diskGb <= Math.min(caps.maxDiskGb, INSTANCE_LIMITS.diskGb.max);
+  const sizes = SIZE_PRESETS.filter(fits).map((p) => ({ ...p, diskGb }));
+  return { sizes, defaultSizeId: sizes[0]?.id ?? null };
 }
 
 export function createQuotas(deps: { caps: PoolCaps; allowedProjects: ReadonlySet<string> }): Quotas {
@@ -51,6 +68,9 @@ export function createQuotas(deps: { caps: PoolCaps; allowedProjects: ReadonlySe
     caps,
     isProjectAllowed(projectId) {
       return deps.allowedProjects.has(projectId.toLowerCase());
+    },
+    sizes(diskGb) {
+      return sizesFor(caps, diskGb);
     },
     async reserve(tx, spec) {
       return this.reserveDelta(tx, { instances: 1, vcpu: spec.vcpu, memoryMb: spec.memoryMb, diskGb: spec.diskGb });

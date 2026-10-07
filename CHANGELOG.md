@@ -15,6 +15,19 @@ All notable changes to softqraft-compute are recorded here. The format follows [
   - `@softqraft/compute-proxmox-fake`: a test-only fake Proxmox API that checks the token and records every call.
   - `HypervisorDriver.capabilities` (`console`, `resize`, `snapshot`) and `list()`. Instances carry their host driver's `capabilities`; the API refuses a resize, snapshot or console the driver cannot do with **409 `not_supported`**.
   - The API knows the `proxmox` driver (enrolment accepts it). Its capabilities in C1: no console (it needs a relay that comes later), resize and snapshots.
+- C1d: the Compute console and the staff fleet pages:
+  - `apps/console`: static, framework-free ES modules served by the API at `/console/` and `/admin/`, with no build step, `no-store` caching and a strict CSP (no inline script or style, connections to this origin only).
+  - Customer console: an empty state with one "Create your first VM" button; a one-screen create with a suggested name, Small, Medium and Large presets, Ubuntu 24.04 preselected (Debian 12 offered) and the remembered SSH key; the VM list and detail with status in words, a copy-ready `ssh` command, usage hours, snapshots and one actions menu (Start or Stop, Resize only while stopped, Snapshot, Delete); delete by typing the VM name, and an inline "Sign in again to delete" when the sign-in is older than 15 minutes. Lists poll every 5 s only while something is changing. The console button shows only when the host offers a console.
+  - Staff fleet: hosts with state in words, capacity used and free and last seen; Drain, "Stop all VMs on this host" (with a confirmation) and Enable, disabled for viewers with the reason; "Add a host" shows a one-time enrolment token with a copy button, its 30-minute expiry and a link to the runbook steps; a read-only table of all instances. Stale operator writes get "Sign in again", through Ops.
+  - Every API error code maps to one plain sentence with the next step. No codes, ids or stack traces on screen.
+  - The detail page reads the instance's `capabilities`: the console button shows only when `console` is true, and Resize and Snapshot are hidden when `resize` or `snapshot` is false. `not_supported` has its own plain sentence.
+  - `GET /console/v1/sizes`: the presets, built from the pilot caps.
+  - `GET`, `POST` and `DELETE /console/v1/ssh-keys`: saved public keys per service instance, ed25519 or RSA of at least 3072 bits, checked from the key blob (migration `004_ssh_keys`).
+  - `GET /console/v1/instances/:id/usage` returns the instance's usage hours.
+  - `GET /console/v1/auth/status` and `GET /admin/v1/auth/status` name the "Sign in again" destination from `CLOUD_ORIGIN`.
+  - Configuration: `CLOUD_ORIGIN` (required, https, in production with federation on) and `COMPUTE_HOST_RUNBOOK_URL`.
+  - The parent brand is pinned by SHA-256 (`scripts/sync-parent-brand.mjs`, `apps/console/brand-manifest.json`); `check:console` (brand pins and `scripts/check-console-ui.test.mjs`) runs in `test:ci`.
+  - `pnpm --filter @softqraft/compute-api preview`: the pages on the memory store with seeded fake data, for local use.
 
 - C1b: Compute is a federated provider of cloud-federation-v1, like Realtime Media:
   - Service instances (§3.1, §3.4, §7.1): `PUT`, `GET` and `health` under `/cloud/v1/service-instances/:id`, Cloud-signed with audience `compute`. Responses carry the contract's `mediaTenantId` field (`cld_` + 12 hex of sha256(serviceInstanceId)). `regionId` must be `COMPUTE_REGION_ID` (default `eu-central`).
@@ -45,6 +58,10 @@ All notable changes to softqraft-compute are recorded here. The format follows [
   - `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example` and `docs/api.md`.
 
 ### Changed
+
+- **The 15-minute rule for Console deletes.** `DELETE` of an instance or a snapshot needs a Console sign-in from the last 15 minutes; otherwise **403 `reauth_required`**, recorded as `auth.console_reauth_required`. A new Cloud launch resets it.
+- The browser CSP is stricter: `default-src 'none'`, no `'unsafe-inline'` styles and no `data:` images.
+- `POST /console/v1/instances/:id/console` returns **409 `not_supported`** when the instance's host driver offers no console.
 
 - Instances, usage and quotas belong to a Cloud service instance (`serviceInstanceId`) instead of a raw Cloud project id. `COMPUTE_ALLOWED_PROJECTS` still lists Cloud project ids and is checked through the service instance.
 - `diskGb` is optional on create and defaults to 16 GB.

@@ -161,6 +161,25 @@ export interface SecurityEventRow {
   createdAt: Date;
 }
 
+/** A saved SSH public key (C1d). Public keys only. */
+export interface SshKeyRow {
+  id: string;
+  serviceInstanceId: string;
+  name: string;
+  type: "ssh-ed25519" | "ssh-rsa";
+  bits: number;
+  fingerprint: string;
+  publicKey: string;
+  createdAt: Date;
+}
+
+/** Lifetime usage of one instance, in exact integer seconds. */
+export interface InstanceUsageTotals {
+  vcpuSeconds: number;
+  memoryMbSeconds: number;
+  diskGbSeconds: number;
+}
+
 export interface Resources {
   vcpu: number;
   memoryMb: number;
@@ -356,6 +375,19 @@ export interface StoreTx {
   insertUsageSample(row: UsageSampleRow): Promise<boolean>;
   addUsage(row: UsageRecordRow): Promise<void>;
   listUsageRecords(serviceInstanceId: string, from: Date, to: Date): Promise<UsageRecordRow[]>;
+  /**
+   * What one instance has used, from its stored samples: vCPU and memory
+   * while running, disk always, at the sizes recorded on each sample.
+   */
+  instanceUsageTotals(instanceId: string): Promise<InstanceUsageTotals>;
+
+  // Saved SSH keys (C1d)
+  /** Insert a key. False when this service instance already has its fingerprint. */
+  insertSshKey(row: SshKeyRow): Promise<boolean>;
+  /** Keys of a service instance, newest first. */
+  listSshKeys(serviceInstanceId: string): Promise<SshKeyRow[]>;
+  /** Delete one key of a service instance. False when there is none. */
+  deleteSshKey(serviceInstanceId: string, id: string): Promise<boolean>;
 }
 
 export interface ComputeStore {
