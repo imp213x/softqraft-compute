@@ -8,7 +8,12 @@
 
 import { generateKeyPairSync, type KeyObject } from "node:crypto";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
-import type { Instance, SignedJob } from "@softqraft/compute-contracts";
+import {
+  CreateJobPayload,
+  SnapshotJobPayload,
+  type Instance,
+  type SignedJob,
+} from "@softqraft/compute-contracts";
 import { DriverError, FakeDriver, defaultDriverRegistry } from "@softqraft/compute-driver";
 import { loadPublicKey, signAgentRequest, verifyJob } from "@softqraft/compute-jobs";
 import { signRequest } from "@softqraft/federation";
@@ -56,6 +61,8 @@ export interface Harness {
   store: ComputeStore;
   clock: TestClock;
   jobSigningPublicKey: KeyObject;
+  /** The four Cloud signature headers for exactly these bytes. */
+  signCloud(method: string, path: string, rawBody: string, audience?: string): Record<string, string>;
   cloud(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<LightMyRequestResponse>;
   createInstance(spec?: Partial<Record<string, unknown>>, key?: string, project?: string): Promise<LightMyRequestResponse>;
   enrolAgent(name?: string, capacity?: { vcpu: number; memoryMb: number; diskGb: number }): Promise<FakeAgent>;
@@ -104,17 +111,23 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     clock,
     jobSigningPublicKey: jobKeys.publicKey,
 
+    signCloud(method, path, rawBody, audience = "compute") {
+      return {
+        ...signRequest({
+          audience,
+          keyId: CLOUD_KEY_ID,
+          privateKey: cloudKeys.privateKey,
+          method,
+          path,
+          body: rawBody,
+          now: clock.now(),
+        }),
+      };
+    },
+
     async cloud(method, path, body, headers = {}) {
       const payload = body === undefined ? "" : JSON.stringify(body);
-      const signed = signRequest({
-        audience: "compute",
-        keyId: CLOUD_KEY_ID,
-        privateKey: cloudKeys.privateKey,
-        method,
-        path,
-        body: payload,
-        now: clock.now(),
-      });
+      const signed = h.signCloud(method, path, payload);
       return app.inject({
         method: method as "GET",
         url: path,
@@ -162,16 +175,28 @@ export class FakeAgent {
     private readonly jobKeys: Map<string, KeyObject>,
   ) {}
 
-  async request(method: string, path: string, body?: unknown, tweak?: (h: Record<string, string>) => void) {
-    const payload = body === undefined ? "" : JSON.stringify(body);
-    const headers = signAgentRequest({
+  /** Signature headers for exactly these bytes, without sending anything. */
+  sign(method: string, path: string, rawBody: string, nonce?: string): Record<string, string> {
+    return signAgentRequest({
       hostId: this.hostId,
       privateKey: this.privateKey,
       method,
       path,
-      body: payload,
+      body: rawBody,
       now: this.clock.now(),
+      nonce,
     });
+  }
+
+  async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    tweak?: (h: Record<string, string>) => void,
+    nonce?: string,
+  ) {
+    const payload = body === undefined ? "" : JSON.stringify(body);
+    const headers = this.sign(method, path, payload, nonce);
     tweak?.(headers);
     return this.app.inject({
       method: method as "POST",
@@ -195,16 +220,12 @@ export class FakeAgent {
     if (!verified.ok) throw new Error(`agent refused job: ${verified.reason}`);
     const env = verified.envelope;
     try {
-      const payload = env.payload as Record<string, never>;
       switch (env.type) {
-        case "create":
-          await this.driver.create({
-            instanceId: env.instanceId,
-            spec: payload.spec,
-            privateIp: payload.privateIp,
-            network: payload.network,
-          });
+        case "create": {
+          const payload = CreateJobPayload.parse(env.payload);
+          await this.driver.create({ instanceId: env.instanceId, ...payload });
           break;
+        }
         case "start":
           await this.driver.start(env.instanceId);
           break;
@@ -215,7 +236,7 @@ export class FakeAgent {
           await this.driver.delete(env.instanceId);
           break;
         case "snapshot":
-          await this.driver.snapshot(env.instanceId, String(payload.snapshotName));
+          await this.driver.snapshot(env.instanceId, SnapshotJobPayload.parse(env.payload).snapshotName);
           break;
       }
     } catch (err) {
