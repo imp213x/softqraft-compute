@@ -50,6 +50,40 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/host-agent:
+    dependencies:
+      '@softqraft/compute-contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@softqraft/compute-driver':
+        specifier: workspace:*
+        version: link:../../packages/driver
+      '@softqraft/compute-driver-proxmox':
+        specifier: workspace:*
+        version: link:../../packages/driver-proxmox
+      '@softqraft/compute-jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@softqraft/compute-proxmox-fake':
+        specifier: workspace:*
+        version: link:../../packages/proxmox-fake
+      '@softqraft/federation':
+        specifier: workspace:*
+        version: link:../../packages/federation
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      tsx:
+        specifier: ^4.23.4
+        version: 4.23.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/contracts:
     dependencies:
       zod:
