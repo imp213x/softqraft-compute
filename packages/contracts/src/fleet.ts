@@ -1,9 +1,9 @@
 /**
- * Images, hosts, jobs and usage.
+ * Images, hosts, jobs, snapshots, console tickets and usage.
  */
 
 import { z } from "zod";
-import { ImageId, InstanceSpec, IsoDateTime, ProjectId, Uuid } from "./instance.js";
+import { DiskGb, ImageId, InstanceSpec, IsoDateTime, MemoryMb, ServiceInstanceId, Uuid, Vcpu } from "./instance.js";
 
 export const Image = z.object({
   id: ImageId,
@@ -60,7 +60,16 @@ export const Host = z.object({
 });
 export type Host = z.infer<typeof Host>;
 
-export const JOB_TYPES = Object.freeze(["create", "start", "stop", "delete", "snapshot"] as const);
+export const JOB_TYPES = Object.freeze([
+  "create",
+  "start",
+  "stop",
+  "delete",
+  "snapshot",
+  "snapshot_delete",
+  "resize",
+  "console",
+] as const);
 export const JobType = z.enum(JOB_TYPES);
 export type JobType = z.infer<typeof JobType>;
 
@@ -78,16 +87,75 @@ export const CreateJobPayload = z
   .strict();
 export type CreateJobPayload = z.infer<typeof CreateJobPayload>;
 
-export const SnapshotJobPayload = z
-  .object({ snapshotName: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/) })
-  .strict();
+/** Snapshot names: a lowercase label of 1 to 40 characters. */
+export const SNAPSHOT_NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
+export const SnapshotName = z.string().regex(SNAPSHOT_NAME_RE, "name must be a lowercase label (a-z, 0-9, -), 1-40 characters");
+
+/** `snapshot` (take one) and `snapshot_delete` (remove one) name the snapshot. */
+export const SnapshotJobPayload = z.object({ snapshotName: SnapshotName }).strict();
 export type SnapshotJobPayload = z.infer<typeof SnapshotJobPayload>;
 
-/** start, stop and delete carry the instance name only. */
+/** start, stop, delete and console carry the instance name only. */
 export const LifecycleJobPayload = z.object({ name: z.string() }).strict();
 export type LifecycleJobPayload = z.infer<typeof LifecycleJobPayload>;
 
-export type JobPayload = CreateJobPayload | SnapshotJobPayload | LifecycleJobPayload;
+/** `resize`: the full new size. Runs only while the VM is stopped; the disk only grows. */
+export const ResizeJobPayload = z
+  .object({ name: z.string(), vcpu: Vcpu, memoryMb: MemoryMb, diskGb: DiskGb })
+  .strict();
+export type ResizeJobPayload = z.infer<typeof ResizeJobPayload>;
+
+export type JobPayload = CreateJobPayload | SnapshotJobPayload | LifecycleJobPayload | ResizeJobPayload;
+
+/** The payload schema for each job type. Agents parse with this before running a job. */
+export const JOB_PAYLOADS = Object.freeze({
+  create: CreateJobPayload,
+  start: LifecycleJobPayload,
+  stop: LifecycleJobPayload,
+  delete: LifecycleJobPayload,
+  snapshot: SnapshotJobPayload,
+  snapshot_delete: SnapshotJobPayload,
+  resize: ResizeJobPayload,
+  console: LifecycleJobPayload,
+} as const);
+
+/**
+ * A short-lived console ticket. The host agent asks its driver for one and
+ * returns it as the result of a `console` job; the API hands it to the
+ * browser once and never holds hypervisor credentials. The ticket is opaque.
+ */
+export const CONSOLE_TICKET_MAX_SECONDS = 300;
+export const ConsoleTicket = z
+  .object({
+    protocol: z.enum(["vnc"]),
+    ticket: z.string().min(1).max(4096).regex(/^[\x21-\x7e]+$/, "ticket must be printable ASCII"),
+    expiresAt: IsoDateTime,
+  })
+  .strict();
+export type ConsoleTicket = z.infer<typeof ConsoleTicket>;
+
+export const SNAPSHOT_STATES = Object.freeze(["creating", "available", "deleting", "deleted", "error"] as const);
+export const SnapshotState = z.enum(SNAPSHOT_STATES);
+export type SnapshotState = z.infer<typeof SnapshotState>;
+
+/**
+ * A snapshot of an instance. `sizeGb` is the disk it holds against the pool
+ * cap: the instance's disk size when the snapshot was taken (a thin-pool
+ * snapshot can grow to that size).
+ */
+export const Snapshot = z.object({
+  id: Uuid,
+  instanceId: Uuid,
+  name: SnapshotName,
+  state: SnapshotState,
+  sizeGb: z.number().int().positive(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type Snapshot = z.infer<typeof Snapshot>;
+
+export const CreateSnapshotRequest = z.object({ name: SnapshotName }).strict();
+export type CreateSnapshotRequest = z.infer<typeof CreateSnapshotRequest>;
 
 export const Job = z.object({
   id: Uuid,
@@ -153,16 +221,16 @@ export type AgentUsageReport = z.infer<typeof AgentUsageReport>;
 /** A stored sample: the agent's observation plus the sizes the API allocated. */
 export const UsageSample = AgentUsageSample.extend({
   hostId: Uuid,
-  projectId: ProjectId,
+  serviceInstanceId: ServiceInstanceId,
   vcpu: z.number().int(),
   memoryMb: z.number().int(),
   diskGb: z.number().int(),
 });
 export type UsageSample = z.infer<typeof UsageSample>;
 
-/** Usage for one project in one UTC hour. Metered, not priced (decision D7). */
+/** Usage for one service instance in one UTC hour. Metered, not priced (decision D7). */
 export const UsageRecord = z.object({
-  projectId: ProjectId,
+  serviceInstanceId: ServiceInstanceId,
   hourStart: IsoDateTime,
   vcpuHours: z.number().nonnegative(),
   memoryGbHours: z.number().nonnegative(),

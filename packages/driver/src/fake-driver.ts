@@ -4,15 +4,26 @@
  * drive retries.
  */
 
-import type { InstanceSpec } from "@softqraft/compute-contracts";
+import type { ConsoleTicket, InstanceSize, InstanceSpec } from "@softqraft/compute-contracts";
 import {
+  DRIVER_ERRORS,
   DriverError,
   type CreateVmInput,
   type HypervisorDriver,
+  type SnapshotInfo,
   type VmStatus,
 } from "./driver.js";
 
-type Operation = "create" | "start" | "stop" | "delete" | "snapshot";
+type Operation =
+  | "create"
+  | "start"
+  | "stop"
+  | "delete"
+  | "resize"
+  | "snapshot"
+  | "listSnapshots"
+  | "deleteSnapshot"
+  | "console";
 
 interface FakeVm {
   spec: InstanceSpec;
@@ -24,7 +35,12 @@ interface FakeVm {
 export interface FakeDriverOptions {
   /** Capacity the fake host has; creates beyond it fail like a full host. */
   capacity?: { vcpu: number; memoryMb: number; diskGb: number };
+  /** Clock for console ticket expiry. Defaults to the system clock. */
+  now?: () => Date;
 }
+
+/** How long a fake console ticket lives. */
+export const FAKE_CONSOLE_TICKET_SECONDS = 60;
 
 export class FakeDriver implements HypervisorDriver {
   readonly name = "fake";
@@ -33,9 +49,12 @@ export class FakeDriver implements HypervisorDriver {
   /** Every call in order, for assertions. */
   readonly calls: Array<{ op: Operation | "status"; instanceId: string }> = [];
   private readonly capacity: FakeDriverOptions["capacity"];
+  private readonly now: () => Date;
+  private ticketCounter = 0;
 
   constructor(options: FakeDriverOptions = {}) {
     this.capacity = options.capacity;
+    this.now = options.now ?? (() => new Date());
   }
 
   /** Make the next `times` calls of `op` fail with `error`. */
@@ -53,7 +72,7 @@ export class FakeDriver implements HypervisorDriver {
 
   private require(instanceId: string): FakeVm {
     const vm = this.vms.get(instanceId);
-    if (!vm) throw new DriverError("vm_not_found", "VM does not exist", false);
+    if (!vm) throw new DriverError(DRIVER_ERRORS.vmNotFound, "VM does not exist", false);
     return vm;
   }
 
@@ -80,7 +99,7 @@ export class FakeDriver implements HypervisorDriver {
         used.memoryMb + input.spec.memoryMb > this.capacity.memoryMb ||
         used.diskGb + input.spec.diskGb > this.capacity.diskGb
       ) {
-        throw new DriverError("host_full", "Host has no room for this VM", false);
+        throw new DriverError(DRIVER_ERRORS.hostFull, "Host has no room for this VM", false);
       }
     }
     this.vms.set(input.instanceId, {
@@ -109,11 +128,57 @@ export class FakeDriver implements HypervisorDriver {
     this.vms.delete(instanceId);
   }
 
+  async resize(instanceId: string, size: InstanceSize): Promise<void> {
+    this.calls.push({ op: "resize", instanceId });
+    this.maybeFail("resize");
+    const vm = this.require(instanceId);
+    if (vm.power === "running") {
+      throw new DriverError(DRIVER_ERRORS.vmRunning, "Stop the VM before resizing it", false);
+    }
+    if (size.diskGb < vm.spec.diskGb) {
+      throw new DriverError(DRIVER_ERRORS.diskShrink, "A disk can only grow", false);
+    }
+    vm.spec = { ...vm.spec, vcpu: size.vcpu, memoryMb: size.memoryMb, diskGb: size.diskGb };
+  }
+
   async snapshot(instanceId: string, snapshotName: string): Promise<void> {
     this.calls.push({ op: "snapshot", instanceId });
     this.maybeFail("snapshot");
     const vm = this.require(instanceId);
     if (!vm.snapshots.includes(snapshotName)) vm.snapshots.push(snapshotName);
+  }
+
+  async listSnapshots(instanceId: string): Promise<SnapshotInfo[]> {
+    this.calls.push({ op: "listSnapshots", instanceId });
+    this.maybeFail("listSnapshots");
+    return this.require(instanceId).snapshots.map((name) => ({ name }));
+  }
+
+  async deleteSnapshot(instanceId: string, snapshotName: string): Promise<void> {
+    this.calls.push({ op: "deleteSnapshot", instanceId });
+    this.maybeFail("deleteSnapshot");
+    const vm = this.vms.get(instanceId);
+    // The VM (and so the snapshot) already gone counts as done.
+    if (!vm) return;
+    vm.snapshots = vm.snapshots.filter((s) => s !== snapshotName);
+  }
+
+  async console(instanceId: string): Promise<ConsoleTicket> {
+    this.calls.push({ op: "console", instanceId });
+    this.maybeFail("console");
+    const vm = this.require(instanceId);
+    if (vm.power !== "running") {
+      throw new DriverError(DRIVER_ERRORS.vmNotRunning, "The VM is not running", false);
+    }
+    this.ticketCounter += 1;
+    const expiresAt = new Date(this.now().getTime() + FAKE_CONSOLE_TICKET_SECONDS * 1000);
+    return { protocol: "vnc", ticket: `FAKEVNC:${instanceId}:${this.ticketCounter}`, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** The size the fake VM has now, or null. */
+  sizeOf(instanceId: string): InstanceSize | null {
+    const vm = this.vms.get(instanceId);
+    return vm ? { vcpu: vm.spec.vcpu, memoryMb: vm.spec.memoryMb, diskGb: vm.spec.diskGb } : null;
   }
 
   async status(instanceId: string): Promise<VmStatus> {
