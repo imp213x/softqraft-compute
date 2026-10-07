@@ -14,6 +14,7 @@ import pg from "pg";
 import { loadMigrations, migrate, PostgresComputeStore } from "../src/store/index.js";
 import { hashGrant } from "@softqraft/federation";
 import { grantFrom, harness, idempotencyKey, instanceOf, principal, SI } from "./helpers.js";
+import { raceSuite } from "./races.js";
 import { behaviourSuite } from "./suites.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -203,3 +204,4 @@ describe("postgres-only guarantees", () => {
 });
 
 behaviourSuite("postgres store", freshStore);
+raceSuite("postgres store", freshStore, { concurrent: true });
