@@ -9,6 +9,7 @@
 
 import type {
   ConsoleRole,
+  InstanceSize,
   HostCapacity,
   HostState,
   InstanceSpec,
@@ -23,7 +24,10 @@ import type {
 export interface InstanceRow {
   id: string;
   serviceInstanceId: string;
+  /** The applied size. Changes only when a resize job succeeds. */
   spec: InstanceSpec;
+  /** A resize target while one is in progress; reserved against the pool. */
+  pendingSize: InstanceSize | null;
   state: InstanceState;
   pendingReason: string | null;
   hostId: string | null;
@@ -58,6 +62,12 @@ export interface JobRow {
   result: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** One applied size of an instance, in force from `effectiveFrom`. */
+export interface InstanceSizeRow extends InstanceSize {
+  instanceId: string;
+  effectiveFrom: Date;
 }
 
 export interface SnapshotRow {
@@ -202,7 +212,9 @@ export interface StoreTx {
   // Pool capacity (quotas)
   /**
    * Lock the pilot pool for the rest of the transaction and return what
-   * live instances and live (not deleted) snapshots hold.
+   * live instances and live (not deleted) snapshots hold. An instance with
+   * a pending resize holds the larger of its size and its target in each
+   * dimension.
    */
   lockPool(): Promise<PoolUsage>;
 
@@ -229,10 +241,20 @@ export interface StoreTx {
   /** A live (not deleted) instance with this name in this service instance. */
   findLiveInstanceByName(serviceInstanceId: string, name: string): Promise<InstanceRow | null>;
   /**
-   * Write an instance (state, spec, placement) only if its state is still
-   * `expectedState`. Returns false when another writer changed it first.
+   * Write an instance (state, spec, pending size, placement) only if its
+   * state is still `expectedState`. Returns false when another writer
+   * changed it first.
    */
   updateInstance(row: InstanceRow, expectedState: InstanceState): Promise<boolean>;
+  /** Record a size that applies from `effectiveFrom` (creation, a completed resize). */
+  recordInstanceSize(row: InstanceSizeRow): Promise<void>;
+  /** Every applied size of an instance, oldest first. */
+  listInstanceSizes(instanceId: string): Promise<InstanceSizeRow[]>;
+  /**
+   * The size in force at `at`: the latest one effective at or before it,
+   * or the first one when `at` is earlier than all of them. Null if none.
+   */
+  instanceSizeAt(instanceId: string, at: Date): Promise<InstanceSize | null>;
 
   // Snapshots
   insertSnapshot(row: SnapshotRow): Promise<void>;
@@ -292,7 +314,7 @@ export interface StoreTx {
    * other state, so it cannot undo a concurrent drain or disable.
    */
   touchHost(id: string, now: Date): Promise<HostRow | null>;
-  /** Resources held by live instances placed on a host. */
+  /** Resources held by live instances placed on a host (pending resizes as in `lockPool`). */
   hostAllocated(hostId: string): Promise<Resources>;
 
   // Enrolment tokens (stored only as SHA-256 hashes)

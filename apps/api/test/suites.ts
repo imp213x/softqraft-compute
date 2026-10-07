@@ -419,10 +419,15 @@ export function behaviourSuite(label: string, makeStore: StoreFactory): void {
       assert.equal(instanceOf(ok).state, "resizing");
       assert.deepEqual(
         [instanceOf(ok).spec.vcpu, instanceOf(ok).spec.memoryMb, instanceOf(ok).spec.diskGb],
-        [2, 2048, 32],
+        [1, 1024, 20],
+        "the spec changes only when the resize completes",
       );
+      assert.deepEqual(instanceOf(ok).pendingSize, { vcpu: 2, memoryMb: 2048, diskGb: 32 });
       await agent.drain();
-      assert.equal((await getInstance(h, inst.id)).state, "stopped");
+      const done = await getInstance(h, inst.id);
+      assert.equal(done.state, "stopped");
+      assert.deepEqual([done.spec.vcpu, done.spec.memoryMb, done.spec.diskGb], [2, 2048, 32]);
+      assert.equal(done.pendingSize, null);
       assert.deepEqual(agent.driver.sizeOf(inst.id), { vcpu: 2, memoryMb: 2048, diskGb: 32 });
     });
 

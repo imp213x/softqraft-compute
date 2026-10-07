@@ -23,6 +23,7 @@ import type {
   PoolUsage,
   PrincipalRow,
   Resources,
+  InstanceSizeRow,
   SecurityEventRow,
   ServiceInstanceRow,
   SnapshotRow,
@@ -32,6 +33,7 @@ import type {
 } from "./types.js";
 
 interface State {
+  sizes: InstanceSizeRow[];
   serviceInstances: Map<string, ServiceInstanceRow>;
   snapshots: Map<string, SnapshotRow>;
   principals: Map<string, PrincipalRow>;
@@ -53,6 +55,7 @@ interface State {
 
 function emptyState(): State {
   return {
+    sizes: [],
     serviceInstances: new Map(),
     snapshots: new Map(),
     principals: new Map(),
@@ -79,6 +82,16 @@ function live(row: { state: string }): boolean {
   return row.state !== "deleted";
 }
 
+/** What an instance holds: the larger of its size and a pending resize target. */
+function held(row: InstanceRow): { vcpu: number; memoryMb: number; diskGb: number } {
+  const p = row.pendingSize;
+  return {
+    vcpu: Math.max(row.spec.vcpu, p?.vcpu ?? 0),
+    memoryMb: Math.max(row.spec.memoryMb, p?.memoryMb ?? 0),
+    diskGb: Math.max(row.spec.diskGb, p?.diskGb ?? 0),
+  };
+}
+
 const byCreated = <T extends { createdAt: Date; id: string }>(a: T, b: T) =>
   a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
 
@@ -89,9 +102,10 @@ class MemoryTx implements StoreTx {
     const usage: PoolUsage = { vcpu: 0, memoryMb: 0, diskGb: 0, instances: 0 };
     for (const row of this.s.instances.values()) {
       if (!live(row)) continue;
-      usage.vcpu += row.spec.vcpu;
-      usage.memoryMb += row.spec.memoryMb;
-      usage.diskGb += row.spec.diskGb;
+      const h = held(row);
+      usage.vcpu += h.vcpu;
+      usage.memoryMb += h.memoryMb;
+      usage.diskGb += h.diskGb;
       usage.instances += 1;
     }
     for (const snap of this.s.snapshots.values()) if (live(snap)) usage.diskGb += snap.sizeGb;
@@ -170,6 +184,27 @@ class MemoryTx implements StoreTx {
     if (!current || current.state !== expectedState) return false;
     this.s.instances.set(row.id, clone(row));
     return true;
+  }
+
+  async recordInstanceSize(row: InstanceSizeRow): Promise<void> {
+    const at = row.effectiveFrom.getTime();
+    this.s.sizes = this.s.sizes.filter((r) => !(r.instanceId === row.instanceId && r.effectiveFrom.getTime() === at));
+    this.s.sizes.push(clone(row));
+  }
+
+  async listInstanceSizes(instanceId: string): Promise<InstanceSizeRow[]> {
+    return this.s.sizes
+      .filter((r) => r.instanceId === instanceId)
+      .sort((a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime())
+      .map(clone);
+  }
+
+  async instanceSizeAt(instanceId: string, at: Date) {
+    const sizes = await this.listInstanceSizes(instanceId);
+    if (sizes.length === 0) return null;
+    let chosen = sizes[0]!;
+    for (const r of sizes) if (r.effectiveFrom.getTime() <= at.getTime()) chosen = r;
+    return { vcpu: chosen.vcpu, memoryMb: chosen.memoryMb, diskGb: chosen.diskGb };
   }
 
   async insertSnapshot(row: SnapshotRow): Promise<void> {
@@ -385,9 +420,10 @@ class MemoryTx implements StoreTx {
     for (const row of this.s.instances.values()) {
       if (row.hostId !== hostId || !live(row)) continue;
       onHost.add(row.id);
-      used.vcpu += row.spec.vcpu;
-      used.memoryMb += row.spec.memoryMb;
-      used.diskGb += row.spec.diskGb;
+      const h = held(row);
+      used.vcpu += h.vcpu;
+      used.memoryMb += h.memoryMb;
+      used.diskGb += h.diskGb;
     }
     for (const snap of this.s.snapshots.values()) {
       if (live(snap) && onHost.has(snap.instanceId)) used.diskGb += snap.sizeGb;

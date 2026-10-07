@@ -5,7 +5,9 @@
  *
  * Metering rule: vCPU and memory count while the instance is running; disk
  * counts while it exists. Sizes come from the API's own record of the
- * instance, never from the agent. A sample repeated with the same
+ * instance, never from the agent: the size in force at the sample's
+ * `sampledAt` (from the instance's size history), so a late sample from
+ * before a resize is metered at the old size. A sample repeated with the same
  * (instanceId, sampledAt) is ignored, so retries never double count.
  * A sample that spans an hour boundary is split between the two hours.
  */
@@ -77,6 +79,7 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
           if (!instance || instance.hostId !== host.id) {
             throw new HttpError(400, "unknown_instance", "A sample names an instance this host does not run");
           }
+          const size = (await tx.instanceSizeAt(instance.id, sampledAt)) ?? instance.spec;
           const inserted = await tx.insertUsageSample({
             instanceId: instance.id,
             hostId: host.id,
@@ -84,9 +87,9 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
             sampledAt,
             intervalSeconds: sample.intervalSeconds,
             powerState: sample.powerState,
-            vcpu: instance.spec.vcpu,
-            memoryMb: instance.spec.memoryMb,
-            diskGb: instance.spec.diskGb,
+            vcpu: size.vcpu,
+            memoryMb: size.memoryMb,
+            diskGb: size.diskGb,
           });
           if (!inserted) {
             duplicates += 1;
@@ -98,9 +101,9 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
             await tx.addUsage({
               serviceInstanceId: instance.serviceInstanceId,
               hourStart: slice.hourStart,
-              vcpuSeconds: running ? Math.round(instance.spec.vcpu * slice.seconds) : 0,
-              memoryMbSeconds: running ? Math.round(instance.spec.memoryMb * slice.seconds) : 0,
-              diskGbSeconds: Math.round(instance.spec.diskGb * slice.seconds),
+              vcpuSeconds: running ? Math.round(size.vcpu * slice.seconds) : 0,
+              memoryMbSeconds: running ? Math.round(size.memoryMb * slice.seconds) : 0,
+              diskGbSeconds: Math.round(size.diskGb * slice.seconds),
             });
           }
         }

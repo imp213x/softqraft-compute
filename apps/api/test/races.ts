@@ -153,7 +153,7 @@ export function raceSuite(label: string, makeStore: StoreFactory, options: { con
         assert.equal(snap.statusCode, 202, snap.body);
         assert.equal(snap.json().snapshot.sizeGb, 20, "sized against the disk it was taken from");
         assert.equal(grown.statusCode, 202, grown.body);
-        assert.equal(instanceOf(grown).spec.diskGb, 40);
+        assert.equal(instanceOf(grown).pendingSize?.diskGb, 40);
       } finally {
         await h.close();
         await store.close();

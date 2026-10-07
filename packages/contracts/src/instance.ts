@@ -103,10 +103,16 @@ export const IsoDateTime = z.string().datetime({ offset: true });
 export const SERVICE_INSTANCE_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 export const ServiceInstanceId = z.string().regex(SERVICE_INSTANCE_ID_RE, "serviceInstanceId is not valid");
 
+/** vCPU, memory and disk: what a resize changes. */
+export const InstanceSizeSchema = z.object({ vcpu: Vcpu, memoryMb: MemoryMb, diskGb: DiskGb }).strict();
+
 export const Instance = z.object({
   id: Uuid,
   serviceInstanceId: ServiceInstanceId,
+  /** The size the instance has now. A resize changes it only when it completes. */
   spec: InstanceSpec,
+  /** The target of a resize in progress, or null. Reserved against the pool while pending. */
+  pendingSize: InstanceSizeSchema.nullable().default(null),
   state: InstanceState,
   /** Why an instance is still `pending` (for example no host has room). */
   pendingReason: z.string().nullable(),

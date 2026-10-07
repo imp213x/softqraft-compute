@@ -10,7 +10,9 @@
  * different body it is refused.
  *
  * Resize runs only while stopped: vCPU and memory may change, the disk only
- * grows. Snapshots hold the instance's disk size against the pool's disk
+ * grows. A resize request records a pending target and reserves it; the
+ * spec changes, and the new size is added to the instance's size history,
+ * only when the resize job succeeds. A failed resize releases the target. Snapshots hold the instance's disk size against the pool's disk
  * cap until deleted. A console request queues a one-attempt `console` job
  * and waits briefly for the host agent's ticket; the API never holds
  * hypervisor credentials.
@@ -105,6 +107,7 @@ export function toInstance(row: InstanceRow): Instance {
     id: row.id,
     serviceInstanceId: row.serviceInstanceId,
     spec: row.spec,
+    pendingSize: row.pendingSize,
     state: row.state,
     pendingReason: row.pendingReason,
     hostId: row.hostId,
@@ -251,7 +254,13 @@ export function createInstances(deps: InstancesDeps): Instances {
       };
       const to = target[job.type];
       if (!to || !canTransition(row.state, to)) return;
-      const next = await move(tx, row, to, now);
+      let patch: Partial<InstanceRow> = {};
+      if (job.type === "resize" && row.pendingSize) {
+        // The resize took effect now: apply it and add it to the history.
+        patch = { spec: { ...row.spec, ...row.pendingSize }, pendingSize: null };
+        await tx.recordInstanceSize({ instanceId: row.id, effectiveFrom: now, ...row.pendingSize });
+      }
+      const next = await move(tx, row, to, now, patch);
       if (to === "deleted") {
         await ipam.release(tx, row.id, now);
         await tx.markSnapshotsDeleted(row.id, now);
@@ -277,7 +286,9 @@ export function createInstances(deps: InstancesDeps): Instances {
         default: {
           const row = await tx.getInstance(job.instanceId);
           if (!row || !canTransition(row.state, "error")) return;
-          await move(tx, row, "error", now);
+          // A failed resize never took effect: the spec and the size history
+          // stay as they were, and the pending target is released.
+          await move(tx, row, "error", now, { pendingSize: null });
         }
       }
     },
@@ -320,9 +331,10 @@ export function createInstances(deps: InstancesDeps): Instances {
         throw new HttpError(409, "no_host_capacity", "The host has no room for this size");
       }
     }
-    // The new size is held from now on; if the resize job fails the
+    // Only the target is recorded (and reserved); the spec changes when the
+    // resize job succeeds. If it fails, the target is released and the
     // instance goes to `error`, as for any other failed job.
-    const resizing = await move(tx, row, "resizing", now, { spec: { ...row.spec, ...size } });
+    const resizing = await move(tx, row, "resizing", now, { pendingSize: size });
     const payload: ResizeJobPayload = { name: row.spec.name, ...size };
     await deps.jobs().enqueue(tx, { hostId: row.hostId!, instanceId: row.id, type: "resize", payload, now });
     return resizing;
@@ -370,6 +382,7 @@ export function createInstances(deps: InstancesDeps): Instances {
           id: randomUUID(),
           serviceInstanceId,
           spec,
+          pendingSize: null,
           state: "pending",
           pendingReason: null,
           hostId: null,
@@ -379,6 +392,13 @@ export function createInstances(deps: InstancesDeps): Instances {
         };
         // The address hold references the instance, so insert the instance first.
         await tx.insertInstance(draft);
+        await tx.recordInstanceSize({
+          instanceId: draft.id,
+          effectiveFrom: now,
+          vcpu: spec.vcpu,
+          memoryMb: spec.memoryMb,
+          diskGb: spec.diskGb,
+        });
         const privateIp = await ipam.allocate(tx, draft.id, now);
         if (!privateIp) throw new HttpError(409, "address_pool_exhausted", "No private address is free");
         const row: InstanceRow = { ...draft, privateIp };

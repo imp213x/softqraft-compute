@@ -23,6 +23,7 @@ import type {
   PoolUsage,
   PrincipalRow,
   Resources,
+  InstanceSizeRow,
   SecurityEventRow,
   ServiceInstanceRow,
   SnapshotRow,
@@ -51,6 +52,10 @@ function toInstance(r: Row): InstanceRow {
     id: String(r.id),
     serviceInstanceId: String(r.service_instance_id),
     spec: r.spec as InstanceRow["spec"],
+    pendingSize:
+      r.pending_vcpu === null || r.pending_vcpu === undefined
+        ? null
+        : { vcpu: num(r.pending_vcpu), memoryMb: num(r.pending_memory_mb), diskGb: num(r.pending_disk_gb) },
     state: r.state as InstanceRow["state"],
     pendingReason: (r.pending_reason as string | null) ?? null,
     hostId: (r.host_id as string | null) ?? null,
@@ -182,7 +187,14 @@ function toOperatorSession(r: Row): OperatorSessionRow {
 }
 
 const INSTANCE_COLUMNS =
-  "id, service_instance_id, spec, state, pending_reason, host_id, host(private_ip) AS private_ip, created_at, updated_at";
+  "id, service_instance_id, spec, pending_vcpu, pending_memory_mb, pending_disk_gb, state, pending_reason, host_id, host(private_ip) AS private_ip, created_at, updated_at";
+
+/** What an instance holds: the larger of its size and a pending resize target. */
+const HELD = {
+  vcpu: "GREATEST(vcpu, COALESCE(pending_vcpu, 0))",
+  memoryMb: "GREATEST(memory_mb, COALESCE(pending_memory_mb, 0))",
+  diskGb: "GREATEST(disk_gb, COALESCE(pending_disk_gb, 0))",
+};
 
 class PostgresTx implements StoreTx {
   constructor(private readonly c: pg.PoolClient) {}
@@ -194,8 +206,8 @@ class PostgresTx implements StoreTx {
   async lockPool(): Promise<PoolUsage> {
     await this.c.query("SELECT id FROM quota_pool WHERE id = 'pilot' FOR UPDATE");
     const [r] = await this.rows(
-      `SELECT COALESCE(SUM(vcpu), 0) AS vcpu, COALESCE(SUM(memory_mb), 0) AS memory_mb,
-              COALESCE(SUM(disk_gb), 0) AS disk_gb, COUNT(*) AS instances,
+      `SELECT COALESCE(SUM(${HELD.vcpu}), 0) AS vcpu, COALESCE(SUM(${HELD.memoryMb}), 0) AS memory_mb,
+              COALESCE(SUM(${HELD.diskGb}), 0) AS disk_gb, COUNT(*) AS instances,
               (SELECT COALESCE(SUM(size_gb), 0) FROM snapshots WHERE state <> 'deleted') AS snapshot_gb
          FROM instances WHERE state <> 'deleted'`,
     );
@@ -329,7 +341,8 @@ class PostgresTx implements StoreTx {
   async updateInstance(row: InstanceRow, expectedState: InstanceRow["state"]): Promise<boolean> {
     const result = await this.c.query(
       `UPDATE instances SET state = $2, pending_reason = $3, host_id = $4, private_ip = $5, updated_at = $6,
-         spec = $8, vcpu = $9, memory_mb = $10, disk_gb = $11
+         spec = $8, vcpu = $9, memory_mb = $10, disk_gb = $11,
+         pending_vcpu = $12, pending_memory_mb = $13, pending_disk_gb = $14
         WHERE id = $1 AND state = $7`,
       [
         row.id,
@@ -343,9 +356,48 @@ class PostgresTx implements StoreTx {
         row.spec.vcpu,
         row.spec.memoryMb,
         row.spec.diskGb,
+        row.pendingSize?.vcpu ?? null,
+        row.pendingSize?.memoryMb ?? null,
+        row.pendingSize?.diskGb ?? null,
       ],
     );
     return result.rowCount === 1;
+  }
+
+  async recordInstanceSize(row: InstanceSizeRow): Promise<void> {
+    await this.c.query(
+      `INSERT INTO instance_sizes (instance_id, effective_from, vcpu, memory_mb, disk_gb)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (instance_id, effective_from) DO UPDATE SET
+         vcpu = EXCLUDED.vcpu, memory_mb = EXCLUDED.memory_mb, disk_gb = EXCLUDED.disk_gb`,
+      [row.instanceId, row.effectiveFrom, row.vcpu, row.memoryMb, row.diskGb],
+    );
+  }
+
+  async listInstanceSizes(instanceId: string): Promise<InstanceSizeRow[]> {
+    const rows = await this.rows(
+      "SELECT * FROM instance_sizes WHERE instance_id = $1 ORDER BY effective_from",
+      [instanceId],
+    );
+    return rows.map((r) => ({
+      instanceId: String(r.instance_id),
+      effectiveFrom: date(r.effective_from),
+      vcpu: num(r.vcpu),
+      memoryMb: num(r.memory_mb),
+      diskGb: num(r.disk_gb),
+    }));
+  }
+
+  async instanceSizeAt(instanceId: string, at: Date) {
+    const [r] = await this.rows(
+      `SELECT vcpu, memory_mb, disk_gb FROM instance_sizes WHERE instance_id = $1
+        ORDER BY (effective_from <= $2) DESC,
+                 CASE WHEN effective_from <= $2 THEN effective_from END DESC,
+                 effective_from ASC
+        LIMIT 1`,
+      [instanceId, at],
+    );
+    return r ? { vcpu: num(r.vcpu), memoryMb: num(r.memory_mb), diskGb: num(r.disk_gb) } : null;
   }
 
   async insertSnapshot(row: SnapshotRow): Promise<void> {
@@ -631,8 +683,8 @@ class PostgresTx implements StoreTx {
 
   async hostAllocated(hostId: string): Promise<Resources> {
     const [r] = await this.rows(
-      `SELECT COALESCE(SUM(vcpu), 0) AS vcpu, COALESCE(SUM(memory_mb), 0) AS memory_mb,
-              COALESCE(SUM(disk_gb), 0) AS disk_gb,
+      `SELECT COALESCE(SUM(${HELD.vcpu}), 0) AS vcpu, COALESCE(SUM(${HELD.memoryMb}), 0) AS memory_mb,
+              COALESCE(SUM(${HELD.diskGb}), 0) AS disk_gb,
               (SELECT COALESCE(SUM(s.size_gb), 0) FROM snapshots s JOIN instances i ON i.id = s.instance_id
                 WHERE i.host_id = $1 AND i.state <> 'deleted' AND s.state <> 'deleted') AS snapshot_gb
          FROM instances WHERE host_id = $1 AND state <> 'deleted'`,

@@ -173,10 +173,12 @@ Responses:
 The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, and the disk cap also covers every live snapshot. Capacity is reserved atomically.
 
 ```json
-{ "id": "uuid", "serviceInstanceId": "…", "spec": { … }, "state": "provisioning",
+{ "id": "uuid", "serviceInstanceId": "…", "spec": { … }, "pendingSize": null, "state": "provisioning",
   "pendingReason": null, "hostId": "uuid", "privateIp": "10.30.0.2",
   "createdAt": "ISO-8601", "updatedAt": "ISO-8601" }
 ```
+
+`spec` is the size the instance has now. `pendingSize` is `{ "vcpu", "memoryMb", "diskGb" }` while a resize is in progress, otherwise `null`.
 
 `pendingReason` is `no_active_host` or `no_host_capacity` while an instance is `pending`. Pending instances are placed automatically when a host becomes active or frees room.
 
@@ -200,7 +202,10 @@ The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, a
 
 Resize rules:
 - At least one size must be given. vCPU and memory may go up or down; the disk may only grow (**400 `invalid_resize`**, also when nothing changes).
-- Growth must fit the pool caps (**409 `quota_exceeded`**) and the host (**409 `no_host_capacity`**). The new size is held from the request on.
+- Growth must fit the pool caps (**409 `quota_exceeded`**) and the host (**409 `no_host_capacity`**).
+- The request records the target in `pendingSize` and reserves it: while pending, the instance holds the larger of its size and the target in each dimension.
+- `spec` changes only when the resize job succeeds; that size then applies from that moment for metering.
+- If the resize fails, the instance goes to `error` with its `spec` unchanged, and the reservation is released.
 
 Other errors: **409 `invalid_state`**, and **409 `host_disabled`** for start or resize on a disabled host.
 
@@ -242,7 +247,7 @@ Asks the host agent for a short-lived console ticket and waits for it, for up to
   "vcpuHours": 1.5, "memoryGbHours": 1.5, "diskGbHours": 20 }
 ```
 
-vCPU and memory count while an instance runs; disk counts while it exists. Usage is metered, not priced.
+vCPU and memory count while an instance runs; disk counts while it exists. Each sample is metered at the size the instance had at its `sampledAt`, so a sample reported after a resize, about a time before it, uses the old size. Usage is metered, not priced.
 
 ### `GET /console/v1/auth/me`
 
