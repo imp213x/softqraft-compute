@@ -53,3 +53,4 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 - Snapshots and resizes read their instance under the pool lock, so a snapshot is never checked or sized against a disk a concurrent resize has changed.
 - Locks are taken in one order everywhere: pool, then host, then instance.
 - The kill switch no longer leaves a VM that is being deleted running: a disabled host may claim delete jobs as well as stops.
+- `COMPUTE_COOKIE_SECURE=false` is refused at startup unless `COMPUTE_PUBLIC_URL` is a local development URL (unset, `http://localhost` or `http://127.0.0.1`), so session cookies cannot lose `Secure` on an https or federated deployment.

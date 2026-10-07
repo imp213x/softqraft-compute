@@ -140,6 +140,13 @@ function parsePublicUrl(raw: string | undefined): string | null {
   return url.origin;
 }
 
+/** No public URL (the local listener), or plain http on localhost or 127.0.0.1. */
+function isLocalDevelopmentUrl(publicUrl: string | null): boolean {
+  if (publicUrl === null) return true;
+  const url = new URL(publicUrl);
+  return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+}
+
 const PROXY_RE = /^[0-9A-Fa-f:.]+(?:\/\d{1,3})?$/;
 
 function parseTrustedProxies(raw: string): string[] {
@@ -217,6 +224,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const cookieSecure =
     e.COMPUTE_COOKIE_SECURE !== undefined ? e.COMPUTE_COOKIE_SECURE === "true" : Boolean(publicUrl?.startsWith("https://"));
+  // Session cookies may lose `Secure` only for local development: no public
+  // URL (the local listener) or plain http on localhost or 127.0.0.1.
+  if (e.COMPUTE_COOKIE_SECURE === "false" && !isLocalDevelopmentUrl(publicUrl)) {
+    throw new ConfigError(
+      "COMPUTE_COOKIE_SECURE=false is allowed only with a local development COMPUTE_PUBLIC_URL (http://localhost or http://127.0.0.1)",
+    );
+  }
 
   return {
     env: e.NODE_ENV,
