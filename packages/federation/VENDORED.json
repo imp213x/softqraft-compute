@@ -1,0 +1,27 @@
+{
+  "package": "@softqraft/federation",
+  "version": "1.0.0",
+  "tag": "v1.0.0",
+  "commit": "898f0579f46eaa3cf0c199a0af78c612eac8f0f2",
+  "files": {
+    "CHANGELOG.md": "066b3bb5e6eb81fecf91b2aa430683639c871e8558fe04546678458e61cca60c",
+    "LICENSE": "10dc64f750e3391a834a9ed6b1851d3a46aba5dc53133953a94e98ff858b452e",
+    "README.md": "83d058b7804c8156a7dfda1dda2e8fdd00bdc03527b2b4783a22ccbcafc20d6c",
+    "package.json": "f676954256230c2ce19bd5954b96cb2237cc20f7ae68bcebd662c1f557c357ea",
+    "scripts/verify-vendored.mjs": "a1ea2626a08141f4083da59878a19073bc99d9f140cb8b5f97b2e5b2961bb049",
+    "src/conformance.ts": "b4ba82f78796d41fe5d2b51eb41ea197f4b424ac07050c22c2413d7e17a4f7b3",
+    "src/contract.ts": "ea546225d3ce8b9055c3f57db2ed5f1762e6d64dee2110b98b31bd95845ba948",
+    "src/descriptor.ts": "2ebf60d81698cc4ec0b03df8c3861b48161f290515d3b8855f77a70259ba6696",
+    "src/grants.ts": "4431a2db5117f7e0f3e34105adb5fe8869f253016bf93a5883553991d34e038e",
+    "src/index.ts": "0ad0aa20dfcb3fc14f6fa728ec1fa6e651349c24388adf7cfce1e5bdc7398d37",
+    "src/paths.ts": "fc6d3883340a5d626d9d3c208ad9197337b237a220572faf4b6cc4a3601c90e2",
+    "src/roles.ts": "c0d1a9c14e72a92432426b8d1339f797ae614726298131157c8b28a1342e0c17",
+    "src/sessions.ts": "0129450a1f4f43856683cf0bf77e42c97434d3ecebf22155564e8bcd366b0290",
+    "src/signing.ts": "a55044550ab24aca54422f075addb401092df80e38a43d4a535c2d3bdb6fdf09",
+    "src/time.ts": "99a77fc6131801260bf521590cba7dccc5a4e85b5cbe520ea76bebcbca09f1a1",
+    "src/vectors.ts": "436300bbd9d5e6749fc5407ac593735fdf77c4fa99e5bfd5b7493b740971bacc",
+    "src/verify.ts": "1e756428cabdd56c0ac72ddb93099d68614b657431cc3a519ebfc279233f7955",
+    "tsconfig.build.json": "59553fa00d42e3233fc5d93fb550a7a98fe81c318ae71e1c9cb083ea53657cb0",
+    "vectors/cloud-federation-v1.vectors.json": "e9022643759e002630cbc541b782207267747a99a756a6bce9b0116a62830a7a"
+  }
+}
