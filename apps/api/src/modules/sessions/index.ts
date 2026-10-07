@@ -148,6 +148,8 @@ export interface Sessions {
   endConsole(token: string | undefined): Promise<void>;
   endOperator(token: string | undefined): Promise<void>;
   record(event: SecurityEvent, now: Date): Promise<void>;
+  /** Write a security event inside the caller's transaction. */
+  recordIn(tx: StoreTx, event: SecurityEvent, now: Date): Promise<void>;
   /** Drop expired grants and sessions. */
   prune(now: Date): Promise<number>;
 }
@@ -388,6 +390,10 @@ export function createSessions(deps: { store: ComputeStore; publicUrl: string })
 
     async record(event, now) {
       await store.transaction((tx) => insertEvent(tx, event, now));
+    },
+
+    async recordIn(tx, event, now) {
+      await insertEvent(tx, event, now);
     },
 
     async prune(now) {

@@ -54,3 +54,4 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 - Locks are taken in one order everywhere: pool, then host, then instance.
 - The kill switch no longer leaves a VM that is being deleted running: a disabled host may claim delete jobs as well as stops.
 - `COMPUTE_COOKIE_SECURE=false` is refused at startup unless `COMPUTE_PUBLIC_URL` is a local development URL (unset, `http://localhost` or `http://127.0.0.1`), so session cookies cannot lose `Secure` on an https or federated deployment.
+- Every fleet write (drain, disable, enable, enrolment token) and its `fleet.*` security event commit in one transaction: if the event cannot be written, the change is rolled back.

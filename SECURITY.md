@@ -37,7 +37,7 @@ Email **support@softqraftlabs.com** with a description, the affected component a
   - lets its agent claim only stop and delete jobs, so a VM already being deleted is still removed;
   - queues a stop for every running instance on it;
   - stops anything that comes up there later.
-  It is recorded as a security event. The switch holds under concurrency: disable, drain, enable and every job outcome lock the host row, and agent requests only record `last_seen_at` (and promote an `enrolled` host), so no request in flight can write the host back to `active` or bring an instance up unseen. The host-side kill switch (agent and VMs) arrives with C1e.
+  It is recorded as a security event in the same transaction as the change; every fleet write is, so a change without its audit record never commits. The switch holds under concurrency: disable, drain, enable and every job outcome lock the host row, and agent requests only record `last_seen_at` (and promote an `enrolled` host), so no request in flight can write the host back to `active` or bring an instance up unseen. The host-side kill switch (agent and VMs) arrives with C1e.
 - Agents sign every request with their host key: body hash, a 300 s timestamp window and a single-use nonce. Agents verify every job's signature, target host and expiry before running it.
 - The host agent pulls jobs over outbound HTTPS. No management port is opened on a host.
 - Only projects in `COMPUTE_ALLOWED_PROJECTS` may create instances (none by default). Pool caps hold under concurrency.

@@ -31,19 +31,28 @@ export interface FleetHost extends Host {
   allocated: Resources;
 }
 
+/**
+ * Writes the audit event for a fleet change inside the change's own
+ * transaction, so the two commit or roll back together. `detail` holds ids
+ * and counts only.
+ */
+export type HostAudit = (tx: StoreTx, detail: Record<string, string>) => Promise<void>;
+
+const noAudit: HostAudit = async () => undefined;
+
 export interface Hosts {
-  createEnrolmentToken(input: { hostName?: string; now: Date }): Promise<{
+  createEnrolmentToken(input: { hostName?: string; now: Date; audit?: HostAudit }): Promise<{
     token: string;
     hostName: string | null;
     expiresAt: Date;
   }>;
   enrol(input: EnrolRequest, now: Date): Promise<HostRow>;
   list(): Promise<FleetHost[]>;
-  drain(hostId: string): Promise<HostRow>;
+  drain(hostId: string, audit?: HostAudit): Promise<HostRow>;
   /** The kill switch. Returns the host and how many stops were queued. */
-  disable(hostId: string, now: Date): Promise<{ host: HostRow; stopsQueued: number }>;
+  disable(hostId: string, now: Date, audit?: HostAudit): Promise<{ host: HostRow; stopsQueued: number }>;
   /** Back to `active` (or `enrolled` if the host has never been seen). */
-  enable(hostId: string): Promise<HostRow>;
+  enable(hostId: string, audit?: HostAudit): Promise<HostRow>;
   /**
    * Record a verified agent request: last seen, and `enrolled` becomes
    * `active`. Only the host id of `host` is used: the row may be stale, and
@@ -77,12 +86,13 @@ export function createHosts(deps: {
   onDisable: (tx: StoreTx, hostId: string, now: Date) => Promise<number>;
 }): Hosts {
   return {
-    async createEnrolmentToken({ hostName, now }) {
+    async createEnrolmentToken({ hostName, now, audit = noAudit }) {
       const token = `${ENROLMENT_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
       const expiresAt = new Date(now.getTime() + ENROLMENT_TOKEN_TTL_SECONDS * 1000);
-      await deps.store.transaction((tx) =>
-        tx.insertEnrolmentToken({ tokenHash: hashToken(token), hostName: hostName ?? null, createdAt: now, expiresAt }),
-      );
+      await deps.store.transaction(async (tx) => {
+        await tx.insertEnrolmentToken({ tokenHash: hashToken(token), hostName: hostName ?? null, createdAt: now, expiresAt });
+        await audit(tx, hostName ? { hostName } : {});
+      });
       return { token, hostName: hostName ?? null, expiresAt };
     },
 
@@ -126,19 +136,19 @@ export function createHosts(deps: {
       });
     },
 
-    async drain(hostId) {
+    async drain(hostId, audit = noAudit) {
       return deps.store.transaction(async (tx) => {
         const host = await tx.lockHost(hostId);
         if (!host) throw HOST_NOT_FOUND();
-        if (host.state === "draining") return host;
         if (host.state === "disabled") throw new HttpError(409, "host_disabled", "Host is disabled");
         const next: HostRow = { ...host, state: "draining" };
-        await tx.updateHost(next);
+        if (host.state !== "draining") await tx.updateHost(next);
+        await audit(tx, { hostId });
         return next;
       });
     },
 
-    async disable(hostId, now) {
+    async disable(hostId, now, audit = noAudit) {
       return deps.store.transaction(async (tx) => {
         // The host lock serialises the kill switch with job completions,
         // which take the same lock (see the instances module).
@@ -148,17 +158,19 @@ export function createHosts(deps: {
         if (host.state !== "disabled") await tx.updateHost(next);
         // Repeating the kill switch queues stops for anything running again.
         const stopsQueued = await deps.onDisable(tx, hostId, now);
+        await audit(tx, { hostId, stopsQueued: String(stopsQueued) });
         return { host: next, stopsQueued };
       });
     },
 
-    async enable(hostId) {
+    async enable(hostId, audit = noAudit) {
       return deps.store.transaction(async (tx) => {
         const host = await tx.lockHost(hostId);
         if (!host) throw HOST_NOT_FOUND();
-        if (host.state === "active" || host.state === "enrolled") return host;
-        const next: HostRow = { ...host, state: host.lastSeenAt ? "active" : "enrolled" };
-        await tx.updateHost(next);
+        const unchanged = host.state === "active" || host.state === "enrolled";
+        const next: HostRow = unchanged ? host : { ...host, state: host.lastSeenAt ? "active" : "enrolled" };
+        if (!unchanged) await tx.updateHost(next);
+        await audit(tx, { hostId });
         return next;
       });
     },

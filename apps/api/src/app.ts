@@ -251,9 +251,10 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
 
     // Admin (staff browser, same origin), only while operator launch is on.
     if (operatorLaunch) {
-      const audit: FleetAudit = async (req, action, detail, now) => {
+      const audit: FleetAudit = (req, action, now) => async (tx, detail) => {
         const s = req.operatorSession;
-        await services.sessions.record(
+        await services.sessions.recordIn(
+          tx,
           { action, subject: s?.subject ?? null, sessionId: s?.id ?? null, role: s?.role ?? null, detail },
           now,
         );

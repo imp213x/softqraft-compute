@@ -3,14 +3,14 @@
  * and the staff fleet routes under `/admin/v1/fleet/`, registered inside
  * the Admin operator-session guard. Viewers read; owners and admins write
  * (the guard enforces it, with the 15-minute freshness rule). Every write
- * is recorded as a security event.
+ * is recorded as a security event in the same transaction as the change.
  */
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { CreateEnrolmentTokenRequest, EnrolRequest } from "@softqraft/compute-contracts";
 import { jsonBody, type Clock } from "../../lib/http.js";
 import { uuidParam } from "../../lib/params.js";
-import { toHost, type Hosts } from "./index.js";
+import { toHost, type HostAudit, type Hosts } from "./index.js";
 
 export function registerEnrolRoute(
   app: FastifyInstance,
@@ -23,13 +23,11 @@ export function registerEnrolRoute(
   });
 }
 
-/** A fleet audit record: ids and names only. */
-export type FleetAudit = (
-  req: FastifyRequest,
-  action: string,
-  detail: Record<string, string>,
-  now: Date,
-) => Promise<void>;
+/**
+ * Builds the audit writer for one fleet request: the event is written in
+ * the same transaction as the change (ids and names only).
+ */
+export type FleetAudit = (req: FastifyRequest, action: string, now: Date) => HostAudit;
 
 export function registerFleetRoutes(
   app: FastifyInstance,
@@ -42,8 +40,7 @@ export function registerFleetRoutes(
   app.post("/admin/v1/fleet/hosts/:id/drain", async (req) => {
     const id = uuidParam(req, "id", "host");
     const now = clock();
-    const host = await hosts.drain(id);
-    await audit(req, "fleet.host_drain", { hostId: id }, now);
+    const host = await hosts.drain(id, audit(req, "fleet.host_drain", now));
     return { host: toHost(host) };
   });
 
@@ -51,24 +48,21 @@ export function registerFleetRoutes(
   app.post("/admin/v1/fleet/hosts/:id/disable", async (req) => {
     const id = uuidParam(req, "id", "host");
     const now = clock();
-    const { host, stopsQueued } = await hosts.disable(id, now);
-    await audit(req, "fleet.host_disable", { hostId: id, stopsQueued: String(stopsQueued) }, now);
+    const { host, stopsQueued } = await hosts.disable(id, now, audit(req, "fleet.host_disable", now));
     return { host: toHost(host), stopsQueued };
   });
 
   app.post("/admin/v1/fleet/hosts/:id/enable", async (req) => {
     const id = uuidParam(req, "id", "host");
     const now = clock();
-    const host = await hosts.enable(id);
-    await audit(req, "fleet.host_enable", { hostId: id }, now);
+    const host = await hosts.enable(id, audit(req, "fleet.host_enable", now));
     return { host: toHost(host) };
   });
 
   app.post("/admin/v1/fleet/enrolment-tokens", async (req, reply) => {
     const body = CreateEnrolmentTokenRequest.parse(jsonBody(req));
     const now = clock();
-    const created = await hosts.createEnrolmentToken({ ...body, now });
-    await audit(req, "fleet.enrolment_token", body.hostName ? { hostName: body.hostName } : {}, now);
+    const created = await hosts.createEnrolmentToken({ ...body, now, audit: audit(req, "fleet.enrolment_token", now) });
     // The token is in this response only: never logged, stored only as a hash.
     return reply
       .status(201)

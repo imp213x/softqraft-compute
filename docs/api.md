@@ -271,7 +271,7 @@ An instance goes to `error` when its create, start, stop, resize or delete job f
 
 ## Fleet routes (`/admin/v1/fleet`, operator session)
 
-Viewers may read. Owners and admins may write, with a session younger than 15 minutes. Every write is recorded as a `fleet.*` security event.
+Viewers may read. Owners and admins may write, with a session younger than 15 minutes. Every write is recorded as a `fleet.*` security event, in the same transaction as the change.
 
 | Route | Result |
 |---|---|
