@@ -12,6 +12,15 @@ This file supplements the canonical workspace contract at `C:\Projects\AGENTS.md
 - `packages/federation` is the vendored `@softqraft/federation`. Never edit it by hand; replace it with the kit's `scripts/sync.mjs` from a release tag.
 - Cloud owns identity, projects and prices. Compute meters usage and never prices it.
 
+## Console and brand
+
+- `apps/console` is static, framework-free ES modules served by the API at `/console/` and `/admin/`, exactly the shape of Realtime Media's Console. No framework, no bundler, no build step, no new runtime dependency.
+- The parent brand is inherited exactly, never invented: the parent's brand CSS, logo, favicons and shell tokens are copied unchanged and pinned by SHA-256 in `apps/console/brand-manifest.json`. Change them only with `node scripts/sync-parent-brand.mjs --source <softqraft_labs> --write`, after review. Surfaces use the semantic tokens in `styles/tokens.css`, never a private palette.
+- Strict CSP: no inline script, style or event handler, no HTML built from strings (`dom.js` `h()` only), no fixed URLs (Cloud and Ops links come from `CLOUD_ORIGIN` through `/…/v1/auth/status`), no browser storage for session data.
+- Copy: every sentence lives in `modules/shared/copy.js` or `modules/shared/errors.js`; plain words, sentence case, no semicolons or em dashes, no developer text, codes, ids or internal state names on screen. Every API error code a browser can meet maps to one sentence with the next step. Status is always in words.
+- No visible scrollbars, no horizontal page scroll at 375 px, visible keyboard focus and WCAG AA contrast. Wide tables become cards on small screens instead of scrolling.
+- `pnpm run check:console` enforces the brand pins and the UI contract; run the pages with `pnpm --filter @softqraft/compute-api preview` and check them at 375, 768 and 1280 px before handing over a UI change.
+
 ## Safety
 
 - Never touch a real host, Proxmox, Hetzner, Cloudflare or AWS from this repository's code, tests or scripts without an approved brief for that step. Changes to a production host need founder approval on the day.
@@ -21,7 +30,7 @@ This file supplements the canonical workspace contract at `C:\Projects\AGENTS.md
 
 ## Validation and delivery
 
-- `pnpm run test:ci` with a real Postgres (`DATABASE_URL`): build, typecheck, unit tests, the §9 conformance runner, Postgres tests, `check:boundaries`, `check:federation-vendor`. Never skip, disable or weaken a test to get green; report what did not run.
+- `pnpm run test:ci` with a real Postgres (`DATABASE_URL`): build, typecheck, unit tests, the §9 conformance runner, Postgres tests, `check:boundaries`, `check:federation-vendor`, `check:console`. Never skip, disable or weaken a test to get green; report what did not run.
 - Work on a branch, commit after each logical step, never merge. The founder approves merges.
 - In reports, distinguish implemented, locally tested, CI-tested, deployed and production-verified.
 

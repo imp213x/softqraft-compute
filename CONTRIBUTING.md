@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 DATABASE_URL=postgres://… pnpm run test:ci
 ```
 
-`test:ci` builds, typechecks, runs the unit tests, the cloud-federation-v1 §9 conformance runner (`test:conformance`) and the Postgres tests, then `check:boundaries` and `check:federation-vendor`. CI runs the same in `.github/workflows/ci.yml`. A test is never skipped, disabled or weakened to get green; if something cannot run, say so in the pull request.
+`test:ci` builds, typechecks, runs the unit tests, the cloud-federation-v1 §9 conformance runner (`test:conformance`) and the Postgres tests, then `check:boundaries`, `check:federation-vendor` and `check:console` (the parent brand pins and the Console UI contract). CI runs the same in `.github/workflows/ci.yml`. A test is never skipped, disabled or weakened to get green; if something cannot run, say so in the pull request.
 
 ## Code rules
 
