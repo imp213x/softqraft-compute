@@ -179,9 +179,10 @@ export function createInstances(deps: InstancesDeps): Instances {
     return row;
   }
 
+  /** Locks the host row (lock order: pool, host, instance) and refuses a disabled host. */
   async function requireHostEnabled(tx: StoreTx, row: InstanceRow): Promise<void> {
     if (!row.hostId) return;
-    const host = await tx.getHost(row.hostId);
+    const host = await tx.lockHost(row.hostId);
     if (host?.state === "disabled") throw HOST_DISABLED();
   }
 
@@ -219,6 +220,10 @@ export function createInstances(deps: InstancesDeps): Instances {
 
   const jobOutcomes: JobOutcomeHandler = {
     async succeeded(tx, job: JobRow, now) {
+      // The host lock serialises this outcome with the kill switch, which
+      // takes the same lock: either disable sees the instance running and
+      // stops it, or this sees the host disabled and stops it.
+      const host = await tx.lockHost(job.hostId);
       const row = await tx.getInstance(job.instanceId);
       if (!row) return;
       switch (job.type) {
@@ -251,13 +256,14 @@ export function createInstances(deps: InstancesDeps): Instances {
         await ipam.release(tx, row.id, now);
         await tx.markSnapshotsDeleted(row.id, now);
       }
-      if (to === "running" && next.hostId) {
+      if (to === "running" && host?.state === "disabled") {
         // Kill switch: anything that comes up on a disabled host is stopped.
-        const host = await tx.getHost(next.hostId);
-        if (host?.state === "disabled") await stopRunning(tx, next, now);
+        await stopRunning(tx, next, now);
       }
     },
     async failed(tx, job: JobRow, now) {
+      // Same lock order as `succeeded`: host, then instance.
+      await tx.lockHost(job.hostId);
       switch (job.type) {
         case "snapshot":
         case "snapshot_delete": {
