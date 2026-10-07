@@ -242,6 +242,40 @@ export function operatorSessionGuard(deps: BrowserDeps): preHandlerAsyncHookHand
   };
 }
 
+/** Compute's security event for a Console delete refused by the 15-minute rule. */
+export const CONSOLE_REAUTH_REQUIRED_EVENT = "auth.console_reauth_required";
+
+/**
+ * The 15-minute rule for Console deletes (founder, 2026-10-07): a route
+ * preHandler, after the Console guard. A session whose sign-in (its
+ * `createdAt`, which a new Cloud launch resets) is 15 minutes old or more
+ * gets 403 `reauth_required`, recorded as `auth.console_reauth_required`.
+ * The kit's `isFresh` decides, as for operator writes.
+ */
+export function consoleFreshGuard(deps: BrowserDeps): preHandlerAsyncHookHandler {
+  return async function requireFreshConsoleSignIn(req: FastifyRequest, reply: FastifyReply) {
+    const session = req.consoleSession;
+    if (!session) return sendError(req, reply, signInAgain());
+    const now = deps.clock();
+    if (COMPUTE_SESSION_POLICY.isFresh({ createdAt: session.createdAt, now })) return;
+    await deps.sessions.record(
+      {
+        action: CONSOLE_REAUTH_REQUIRED_EVENT,
+        subject: session.subject,
+        serviceInstanceId: session.serviceInstance.id,
+        sessionId: session.id,
+        role: session.role,
+      },
+      now,
+    );
+    return sendError(
+      req,
+      reply,
+      new HttpError(403, ERROR_CODES.REAUTH_REQUIRED, "Sign in again to delete. Open Compute again from SoftQraft"),
+    );
+  };
+}
+
 const freshUntil = (createdAt: Date) => new Date(createdAt.getTime() + FRESH_WRITE_SECONDS * 1000).toISOString();
 
 /** `GET /console/v1/auth/me`, inside the Console guard. */

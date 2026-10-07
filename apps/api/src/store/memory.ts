@@ -27,6 +27,7 @@ import type {
   SecurityEventRow,
   ServiceInstanceRow,
   SnapshotRow,
+  SshKeyRow,
   StoreTx,
   UsageRecordRow,
   UsageSampleRow,
@@ -51,6 +52,7 @@ interface State {
   nonces: Map<string, Date>;
   samples: Map<string, UsageSampleRow>;
   usage: Map<string, UsageRecordRow>;
+  sshKeys: Map<string, SshKeyRow>;
 }
 
 function emptyState(): State {
@@ -73,6 +75,7 @@ function emptyState(): State {
     nonces: new Map(),
     samples: new Map(),
     usage: new Map(),
+    sshKeys: new Map(),
   };
 }
 
@@ -559,6 +562,41 @@ class MemoryTx implements StoreTx {
       )
       .sort((a, b) => a.hourStart.getTime() - b.hourStart.getTime())
       .map(clone);
+  }
+
+  async instanceUsageTotals(instanceId: string) {
+    const totals = { vcpuSeconds: 0, memoryMbSeconds: 0, diskGbSeconds: 0 };
+    for (const s of this.s.samples.values()) {
+      if (s.instanceId !== instanceId) continue;
+      if (s.powerState === "running") {
+        totals.vcpuSeconds += s.vcpu * s.intervalSeconds;
+        totals.memoryMbSeconds += s.memoryMb * s.intervalSeconds;
+      }
+      totals.diskGbSeconds += s.diskGb * s.intervalSeconds;
+    }
+    return totals;
+  }
+
+  async insertSshKey(row: SshKeyRow): Promise<boolean> {
+    for (const k of this.s.sshKeys.values()) {
+      if (k.serviceInstanceId === row.serviceInstanceId && k.fingerprint === row.fingerprint) return false;
+    }
+    this.s.sshKeys.set(row.id, clone(row));
+    return true;
+  }
+
+  async listSshKeys(serviceInstanceId: string) {
+    return [...this.s.sshKeys.values()]
+      .filter((k) => k.serviceInstanceId === serviceInstanceId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || a.id.localeCompare(b.id))
+      .map(clone);
+  }
+
+  async deleteSshKey(serviceInstanceId: string, id: string): Promise<boolean> {
+    const k = this.s.sshKeys.get(id);
+    if (!k || k.serviceInstanceId !== serviceInstanceId) return false;
+    this.s.sshKeys.delete(id);
+    return true;
   }
 }
 

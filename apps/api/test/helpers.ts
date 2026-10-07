@@ -62,6 +62,8 @@ export interface HarnessOptions {
   /** Provision SI and OTHER_SI at start. Default true (when federation is on). */
   provision?: boolean;
   logs?: string[];
+  /** Drivers that offer a browser console (default: the app's own list). */
+  consoleDrivers?: ReadonlySet<string>;
 }
 
 /** A browser session: its cookie value, ready for a `cookie` header. */
@@ -156,6 +158,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     clock: clock.now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 5))),
     logStream: logs ? { write: (line: string) => void logs.push(line) } : undefined,
+    consoleDrivers: options.consoleDrivers,
   });
   await app.ready();
   let defaultConsole: BrowserSession | null = null;

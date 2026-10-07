@@ -11,7 +11,7 @@
  * Both call the same module functions; no logic lives here.
  */
 
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from "fastify";
 import {
   CreateInstanceRequest,
   CreateSnapshotRequest,
@@ -29,8 +29,17 @@ function scope(req: FastifyRequest): string {
   return req.consoleSession.serviceInstance.id;
 }
 
-export function registerConsoleInstanceRoutes(app: FastifyInstance, deps: { instances: Instances; clock: Clock }): void {
+/**
+ * `requireFreshSignIn` guards deletes (instances and snapshots): it refuses
+ * a Console session signed in more than 15 minutes ago with 403
+ * `reauth_required` (the sessions module owns the rule).
+ */
+export function registerConsoleInstanceRoutes(
+  app: FastifyInstance,
+  deps: { instances: Instances; clock: Clock; requireFreshSignIn: preHandlerAsyncHookHandler },
+): void {
   const { instances, clock } = deps;
+  const fresh = { preHandler: deps.requireFreshSignIn };
 
   app.post("/console/v1/instances", async (req, reply) => {
     const serviceInstanceId = scope(req);
@@ -49,11 +58,13 @@ export function registerConsoleInstanceRoutes(app: FastifyInstance, deps: { inst
 
   app.get("/console/v1/instances", async (req) => ({ instances: await instances.list(scope(req)) }));
 
-  app.get("/console/v1/instances/:id", async (req) => ({
-    instance: await instances.get(scope(req), uuidParam(req, "id", "instance")),
+  app.get("/console/v1/instances/:id", async (req) => instances.detail(scope(req), uuidParam(req, "id", "instance")));
+
+  app.get("/console/v1/instances/:id/usage", async (req) => ({
+    usage: await instances.usageOf(scope(req), uuidParam(req, "id", "instance")),
   }));
 
-  app.delete("/console/v1/instances/:id", async (req, reply) => {
+  app.delete("/console/v1/instances/:id", fresh, async (req, reply) => {
     const instance = await instances.remove(scope(req), uuidParam(req, "id", "instance"), clock());
     return reply.status(202).send({ instance });
   });
@@ -78,7 +89,7 @@ export function registerConsoleInstanceRoutes(app: FastifyInstance, deps: { inst
     return reply.status(202).send({ snapshot });
   });
 
-  app.delete("/console/v1/instances/:id/snapshots/:snapshotId", async (req, reply) => {
+  app.delete("/console/v1/instances/:id/snapshots/:snapshotId", fresh, async (req, reply) => {
     const serviceInstanceId = scope(req);
     const id = uuidParam(req, "id", "instance");
     const snapshotId = uuidParam(req, "snapshotId", "snapshot");

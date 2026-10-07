@@ -971,6 +971,8 @@ describe("configuration", () => {
       CLOUD_FEDERATION_PUBLIC_KEYS: JSON.stringify({
         k: ed25519().publicKey.export({ type: "spki", format: "pem" }).toString(),
       }),
+      // C1d: production with federation also needs Cloud's https origin.
+      CLOUD_ORIGIN: "https://cloud.example",
     };
     const url = "https://compute.example";
     assert.throws(() => loadConfig(base), /COMPUTE_PUBLIC_URL/);

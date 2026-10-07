@@ -6,3 +6,4 @@
 export * from "./instance.js";
 export * from "./fleet.js";
 export * from "./api.js";
+export * from "./console.js";

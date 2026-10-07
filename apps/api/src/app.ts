@@ -8,7 +8,9 @@
  *   the host's key;
  * - Cloud (server): `/cloud/v1/*`, Cloud-signed (audience `compute`);
  * - Console (browser): `/console/v1/*`, a Console session cookie;
- * - Admin (browser, staff): `/admin/v1/*`, an operator session cookie.
+ * - Admin (browser, staff): `/admin/v1/*`, an operator session cookie;
+ * - pages: `/console/` and `/admin/` (static, see the web module), in the
+ *   same contexts as their APIs.
  * Cloud and Console exist only when CLOUD_FEDERATION_ENABLED=true, and
  * Admin and `/cloud/v1/operator-launches` only when
  * CLOUD_OPERATOR_LAUNCH_ENABLED=true as well; otherwise they are not
@@ -37,14 +39,17 @@ import {
 } from "./modules/instances/index.js";
 import { createIpam } from "./modules/ipam/index.js";
 import { createJobs, registerAgentJobRoutes, type Jobs } from "./modules/jobs/index.js";
-import { createQuotas, type Quotas } from "./modules/quotas/index.js";
+import { createQuotas, registerConsoleSizeRoutes, type Quotas } from "./modules/quotas/index.js";
 import { createScheduler } from "./modules/scheduler/index.js";
 import {
   createServiceInstances,
   registerServiceInstanceRoutes,
   type ServiceInstances,
 } from "./modules/service-instances/index.js";
+import { createSshKeys, registerConsoleSshKeyRoutes, type SshKeys } from "./modules/ssh-keys/index.js";
+import { registerAdminWebRoutes, registerConsoleWebRoutes } from "./modules/web/index.js";
 import {
+  consoleFreshGuard,
   consoleSessionGuard,
   createSessions,
   operatorSessionGuard,
@@ -65,6 +70,13 @@ import {
 } from "./modules/usage/index.js";
 import type { ComputeStore } from "./store/index.js";
 
+/**
+ * Drivers whose host agent can hand out a browser console ticket. The C1
+ * Proxmox driver (C1e) does not, so the Console hides its console button
+ * for instances on those hosts.
+ */
+export const CONSOLE_CAPABLE_DRIVERS: ReadonlySet<string> = new Set(["fake"]);
+
 export interface AppDeps {
   config: ComputeConfig;
   store: ComputeStore;
@@ -74,6 +86,8 @@ export interface AppDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Where logs go (tests capture them). Defaults to stdout. */
   logStream?: { write(line: string): void };
+  /** Drivers that offer a browser console. Defaults to CONSOLE_CAPABLE_DRIVERS. */
+  consoleDrivers?: ReadonlySet<string>;
 }
 
 export interface Services {
@@ -85,6 +99,7 @@ export interface Services {
   usage: Usage;
   serviceInstances: ServiceInstances;
   sessions: Sessions;
+  sshKeys: SshKeys;
   /** Periodic work: expired leases, pending placement, old nonces, grants, sessions and results. */
   maintenance(now: Date): Promise<void>;
 }
@@ -111,6 +126,7 @@ export function buildServices(deps: AppDeps): Services {
     defaultDiskGb: config.defaultDiskGb,
     consoleWaitMs: config.consoleWaitSeconds * 1000,
     sleep: deps.sleep,
+    driverHasConsole: (driver) => (deps.consoleDrivers ?? CONSOLE_CAPABLE_DRIVERS).has(driver),
     jobs: () => {
       if (!jobs) throw new Error("jobs module is not ready");
       return jobs;
@@ -135,6 +151,7 @@ export function buildServices(deps: AppDeps): Services {
   const usage = createUsage({ store });
   const serviceInstances = createServiceInstances({ store, regionId: config.regionId });
   const sessions = createSessions({ store, publicUrl: publicBase(config) });
+  const sshKeys = createSshKeys({ store });
   const readyJobs = jobs;
 
   return {
@@ -146,6 +163,7 @@ export function buildServices(deps: AppDeps): Services {
     usage,
     serviceInstances,
     sessions,
+    sshKeys,
     async maintenance(now) {
       await readyJobs.reapExpiredLeases(now);
       await instances.placePending(now);
@@ -233,18 +251,27 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
       limiter,
     };
 
+    const web = { cloudOrigin: config.cloudOrigin, hostRunbookUrl: config.hostRunbookUrl };
+
     // Console (customer browser, same origin).
     await app.register(async (consoleApp) => {
       consoleApp.addHook("onSend", async (_req, reply, payload) => {
         applyBrowserSecurityHeaders(reply);
         return payload;
       });
+      registerConsoleWebRoutes(consoleApp, web);
       registerConsoleAuthRoutes(consoleApp, browser);
       await consoleApp.register(async (guarded) => {
         guarded.addHook("preHandler", consoleSessionGuard(browser));
         registerConsoleMeRoute(guarded);
-        registerConsoleInstanceRoutes(guarded, { instances: services.instances, clock });
+        registerConsoleInstanceRoutes(guarded, {
+          instances: services.instances,
+          clock,
+          requireFreshSignIn: consoleFreshGuard(browser),
+        });
         registerConsoleImageRoutes(guarded, services.images);
+        registerConsoleSizeRoutes(guarded, { quotas: services.quotas, defaultDiskGb: config.defaultDiskGb });
+        registerConsoleSshKeyRoutes(guarded, { sshKeys: services.sshKeys, clock });
         registerConsoleUsageRoutes(guarded, { usage: services.usage, clock });
       });
     });
@@ -264,6 +291,7 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
           applyBrowserSecurityHeaders(reply);
           return payload;
         });
+        registerAdminWebRoutes(adminApp, web);
         registerAdminAuthRoutes(adminApp, browser);
         await adminApp.register(async (guarded) => {
           guarded.addHook("preHandler", operatorSessionGuard(browser));

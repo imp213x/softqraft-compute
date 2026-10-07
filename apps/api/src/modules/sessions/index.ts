@@ -48,6 +48,8 @@ import type {
 } from "../../store/index.js";
 
 export {
+  CONSOLE_REAUTH_REQUIRED_EVENT,
+  consoleFreshGuard,
   consoleSessionGuard,
   operatorSessionGuard,
   registerAdminAuthRoutes,

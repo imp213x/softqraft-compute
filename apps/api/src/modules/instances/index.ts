@@ -66,8 +66,21 @@ export interface InstancesDeps {
   consoleWaitMs: number;
   /** Real-time pause between console polls (tests may shorten it). */
   sleep?: (ms: number) => Promise<void>;
+  /** True when a host driver can hand out browser console tickets. */
+  driverHasConsole: (driver: string) => boolean;
   /** Resolved lazily: jobs and instances depend on each other through hooks. */
   jobs: () => Jobs;
+}
+
+export interface InstanceCapabilities {
+  /** A browser console can be opened: the instance runs on a host whose driver offers one. */
+  console: boolean;
+}
+
+export interface InstanceUsage {
+  vcpuHours: number;
+  memoryGbHours: number;
+  diskGbHours: number;
 }
 
 export interface CreateResult {
@@ -87,6 +100,10 @@ export interface Instances {
   /** Every instance, for staff support. */
   listAll(options?: { includeDeleted?: boolean }): Promise<Instance[]>;
   get(serviceInstanceId: string, id: string): Promise<Instance>;
+  /** An instance and what its host can do for it (the Console detail screen). */
+  detail(serviceInstanceId: string, id: string): Promise<{ instance: Instance; capabilities: InstanceCapabilities }>;
+  /** What one instance has used over its life, in hours. Metered, not priced. */
+  usageOf(serviceInstanceId: string, id: string): Promise<InstanceUsage>;
   act(serviceInstanceId: string, id: string, action: InstanceAction, now: Date): Promise<Instance>;
   remove(serviceInstanceId: string, id: string, now: Date): Promise<Instance>;
   createSnapshot(serviceInstanceId: string, id: string, name: string, now: Date): Promise<Snapshot>;
@@ -129,6 +146,8 @@ export function toSnapshot(row: SnapshotRow): Snapshot {
   };
 }
 
+const CONSOLE_UNSUPPORTED = () =>
+  new HttpError(409, "console_unsupported", "This instance's host does not offer a browser console");
 const NOT_FOUND = () => new HttpError(404, "instance_not_found", "Instance not found");
 const SNAPSHOT_NOT_FOUND = () => new HttpError(404, "snapshot_not_found", "Snapshot not found");
 const HOST_DISABLED = () => new HttpError(409, "host_disabled", "The host running this instance is disabled");
@@ -421,6 +440,26 @@ export function createInstances(deps: InstancesDeps): Instances {
       return store.transaction(async (tx) => toInstance(await owned(tx, serviceInstanceId, id)));
     },
 
+    async detail(serviceInstanceId, id) {
+      return store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        const host = row.hostId ? await tx.getHost(row.hostId) : null;
+        return { instance: toInstance(row), capabilities: { console: host !== null && deps.driverHasConsole(host.driver) } };
+      });
+    },
+
+    async usageOf(serviceInstanceId, id) {
+      return store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        const t = await tx.instanceUsageTotals(row.id);
+        return {
+          vcpuHours: t.vcpuSeconds / 3600,
+          memoryGbHours: t.memoryMbSeconds / 1024 / 3600,
+          diskGbHours: t.diskGbSeconds / 3600,
+        };
+      });
+    },
+
     async act(serviceInstanceId, id, action, now) {
       return store.transaction(async (tx) => {
         // A resize reserves pool capacity: take the pool lock before reading
@@ -537,6 +576,8 @@ export function createInstances(deps: InstancesDeps): Instances {
       const job = await store.transaction(async (tx) => {
         const row = await owned(tx, serviceInstanceId, id);
         if (row.state !== "running" || !row.hostId) throw conflict(row.state, "open a console on");
+        const host = await tx.getHost(row.hostId);
+        if (!host || !deps.driverHasConsole(host.driver)) throw CONSOLE_UNSUPPORTED();
         await requireHostEnabled(tx, row);
         return lifecycleJob(tx, row, "console", clock());
       });
