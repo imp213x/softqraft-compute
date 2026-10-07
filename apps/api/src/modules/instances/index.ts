@@ -1,25 +1,44 @@
 /**
- * Instances: create, read, start, stop and delete, and what happens when
- * their jobs end.
+ * Instances: create, read, start, stop, resize, snapshot, console and
+ * delete, and what happens when their jobs end.
  *
- * A create is one transaction: idempotency check, project allow-list, pool
- * reservation (under the pool lock), address, placement and the create job.
- * Every create needs an `Idempotency-Key`; repeating it with the same body
- * returns the same instance, with a different body it is refused.
+ * Instances belong to a Cloud service instance (cloud-federation-v1 §3.1).
+ * A create is one transaction: idempotency check, service instance and its
+ * project's allow-list, pool reservation (under the pool lock), address,
+ * placement and the create job. Every create needs an `Idempotency-Key`;
+ * repeating it with the same body returns the same instance, with a
+ * different body it is refused.
+ *
+ * Resize runs only while stopped: vCPU and memory may change, the disk only
+ * grows. A resize request records a pending target and reserves it; the
+ * spec changes, and the new size is added to the instance's size history,
+ * only when the resize job succeeds. A failed resize releases the target. Snapshots hold the instance's disk size against the pool's disk
+ * cap until deleted. A console request queues a one-attempt `console` job
+ * and waits briefly for the host agent's ticket; the API never holds
+ * hypervisor credentials.
+ *
+ * The kill switch (`stopAllOnHost`) stops every running instance on a
+ * disabled host, and an instance that comes up on a disabled host is
+ * stopped as soon as it does.
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import type {
-  CreateJobPayload,
-  Instance,
-  InstanceAction,
-  InstanceSpec,
-  InstanceState,
-  LifecycleJobPayload,
+import {
+  ConsoleTicket,
+  SnapshotJobPayload,
+  type CreateInstanceRequest,
+  type CreateJobPayload,
+  type Instance,
+  type InstanceAction,
+  type InstanceSpec,
+  type InstanceState,
+  type LifecycleJobPayload,
+  type ResizeJobPayload,
+  type Snapshot,
 } from "@softqraft/compute-contracts";
 import { canonicalJson } from "@softqraft/compute-jobs";
 import { HttpError } from "../../lib/errors.js";
-import type { ComputeStore, InstanceRow, JobRow, StoreTx } from "../../store/index.js";
+import type { ComputeStore, InstanceRow, JobRow, SnapshotRow, StoreTx } from "../../store/index.js";
 import type { Images } from "../images/index.js";
 import type { Ipam } from "../ipam/index.js";
 import type { JobOutcomeHandler, Jobs } from "../jobs/index.js";
@@ -33,7 +52,7 @@ export {
   canTransition,
   InvalidTransitionError,
 } from "./state-machine.js";
-export { registerInstanceRoutes } from "./routes.js";
+export { registerCloudInstanceRoutes, registerConsoleInstanceRoutes, registerFleetInstanceRoutes } from "./routes.js";
 
 export interface InstancesDeps {
   store: ComputeStore;
@@ -41,6 +60,12 @@ export interface InstancesDeps {
   scheduler: Scheduler;
   ipam: Ipam;
   images: Images;
+  /** Used when a create request leaves `diskGb` out. */
+  defaultDiskGb: number;
+  /** How long `openConsole` waits for the agent's ticket. */
+  consoleWaitMs: number;
+  /** Real-time pause between console polls (tests may shorten it). */
+  sleep?: (ms: number) => Promise<void>;
   /** Resolved lazily: jobs and instances depend on each other through hooks. */
   jobs: () => Jobs;
 }
@@ -52,11 +77,25 @@ export interface CreateResult {
 }
 
 export interface Instances {
-  create(input: { projectId: string; idempotencyKey: string; spec: InstanceSpec; now: Date }): Promise<CreateResult>;
-  list(projectId: string): Promise<Instance[]>;
-  get(projectId: string, id: string): Promise<Instance>;
-  act(projectId: string, id: string, action: InstanceAction["action"], now: Date): Promise<Instance>;
-  remove(projectId: string, id: string, now: Date): Promise<Instance>;
+  create(input: {
+    serviceInstanceId: string;
+    idempotencyKey: string;
+    request: CreateInstanceRequest;
+    now: Date;
+  }): Promise<CreateResult>;
+  list(serviceInstanceId: string): Promise<Instance[]>;
+  /** Every instance, for staff support. */
+  listAll(options?: { includeDeleted?: boolean }): Promise<Instance[]>;
+  get(serviceInstanceId: string, id: string): Promise<Instance>;
+  act(serviceInstanceId: string, id: string, action: InstanceAction, now: Date): Promise<Instance>;
+  remove(serviceInstanceId: string, id: string, now: Date): Promise<Instance>;
+  createSnapshot(serviceInstanceId: string, id: string, name: string, now: Date): Promise<Snapshot>;
+  listSnapshots(serviceInstanceId: string, id: string): Promise<Snapshot[]>;
+  deleteSnapshot(serviceInstanceId: string, id: string, snapshotId: string, now: Date): Promise<Snapshot>;
+  /** Ask the host agent for a console ticket and wait for it. */
+  openConsole(serviceInstanceId: string, id: string, clock: () => Date): Promise<ConsoleTicket>;
+  /** Kill switch: queue a stop for every running instance on a host. Returns how many. */
+  stopAllOnHost(tx: StoreTx, hostId: string, now: Date): Promise<number>;
   /** Try to place every `pending` instance. Returns how many were placed. */
   placePending(now: Date): Promise<number>;
   /** Job outcome hooks for the jobs module. */
@@ -66,8 +105,9 @@ export interface Instances {
 export function toInstance(row: InstanceRow): Instance {
   return {
     id: row.id,
-    projectId: row.projectId,
+    serviceInstanceId: row.serviceInstanceId,
     spec: row.spec,
+    pendingSize: row.pendingSize,
     state: row.state,
     pendingReason: row.pendingReason,
     hostId: row.hostId,
@@ -77,18 +117,40 @@ export function toInstance(row: InstanceRow): Instance {
   };
 }
 
+export function toSnapshot(row: SnapshotRow): Snapshot {
+  return {
+    id: row.id,
+    instanceId: row.instanceId,
+    name: row.name,
+    state: row.state,
+    sizeGb: row.sizeGb,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 const NOT_FOUND = () => new HttpError(404, "instance_not_found", "Instance not found");
+const SNAPSHOT_NOT_FOUND = () => new HttpError(404, "snapshot_not_found", "Snapshot not found");
+const HOST_DISABLED = () => new HttpError(409, "host_disabled", "The host running this instance is disabled");
+const POLL_MS = 100;
 
 function conflict(from: InstanceState, action: string): HttpError {
   return new HttpError(409, "invalid_state", `Cannot ${action} an instance that is ${from}`);
+}
+
+function quotaExceeded(dimension: string): HttpError {
+  return new HttpError(409, "quota_exceeded", `The pilot pool has no room: ${dimension} limit reached`);
 }
 
 export function requestHash(spec: InstanceSpec): string {
   return createHash("sha256").update(canonicalJson(spec)).digest("hex");
 }
 
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export function createInstances(deps: InstancesDeps): Instances {
   const { store, quotas, scheduler, ipam, images } = deps;
+  const sleep = deps.sleep ?? realSleep;
 
   async function move(tx: StoreTx, row: InstanceRow, to: InstanceState, now: Date, patch: Partial<InstanceRow> = {}) {
     assertTransition(row.state, to);
@@ -110,57 +172,179 @@ export function createInstances(deps: InstancesDeps): Instances {
     }
     const placed = await move(tx, row, "provisioning", now, { hostId: placement.hostId, pendingReason: null });
     const payload: CreateJobPayload = { spec: row.spec, privateIp: row.privateIp!, network: ipam.network };
-    await deps.jobs().enqueue(tx, {
-      hostId: placement.hostId,
-      instanceId: row.id,
-      type: "create",
-      payload,
-      now,
-    });
+    await deps.jobs().enqueue(tx, { hostId: placement.hostId, instanceId: row.id, type: "create", payload, now });
     return placed;
   }
 
-  async function owned(tx: StoreTx, projectId: string, id: string): Promise<InstanceRow> {
+  async function owned(tx: StoreTx, serviceInstanceId: string, id: string): Promise<InstanceRow> {
     const row = await tx.getInstance(id);
-    if (!row || row.projectId !== projectId) throw NOT_FOUND();
+    if (!row || row.serviceInstanceId !== serviceInstanceId) throw NOT_FOUND();
     return row;
   }
 
-  async function lifecycleJob(tx: StoreTx, row: InstanceRow, type: "start" | "stop" | "delete", now: Date) {
+  /** Locks the host row (lock order: pool, host, instance) and refuses a disabled host. */
+  async function requireHostEnabled(tx: StoreTx, row: InstanceRow): Promise<void> {
+    if (!row.hostId) return;
+    const host = await tx.lockHost(row.hostId);
+    if (host?.state === "disabled") throw HOST_DISABLED();
+  }
+
+  async function lifecycleJob(tx: StoreTx, row: InstanceRow, type: "start" | "stop" | "delete" | "console", now: Date) {
     const payload: LifecycleJobPayload = { name: row.spec.name };
-    await deps.jobs().enqueue(tx, { hostId: row.hostId!, instanceId: row.id, type, payload, now });
+    return deps.jobs().enqueue(tx, {
+      hostId: row.hostId!,
+      instanceId: row.id,
+      type,
+      payload,
+      now,
+      // A console ticket is wanted now or never: no retries.
+      ...(type === "console" ? { maxAttempts: 1 } : {}),
+    });
+  }
+
+  /** Stop an instance that is running, as the kill switch does. */
+  async function stopRunning(tx: StoreTx, row: InstanceRow, now: Date): Promise<boolean> {
+    if (row.state !== "running" || !row.hostId) return false;
+    const stopping = await move(tx, row, "stopping", now);
+    await lifecycleJob(tx, stopping, "stop", now);
+    return true;
+  }
+
+  async function snapshotOf(tx: StoreTx, job: JobRow): Promise<SnapshotRow | null> {
+    const parsed = SnapshotJobPayload.safeParse(job.payload);
+    if (!parsed.success) return null;
+    return tx.findLiveSnapshotByName(job.instanceId, parsed.data.snapshotName);
+  }
+
+  async function moveSnapshot(tx: StoreTx, snap: SnapshotRow, from: SnapshotRow["state"], to: SnapshotRow["state"], now: Date) {
+    if (snap.state !== from) return;
+    await tx.updateSnapshot({ ...snap, state: to, updatedAt: now }, from);
   }
 
   const jobOutcomes: JobOutcomeHandler = {
     async succeeded(tx, job: JobRow, now) {
+      // The host lock serialises this outcome with the kill switch, which
+      // takes the same lock: either disable sees the instance running and
+      // stops it, or this sees the host disabled and stops it.
+      const host = await tx.lockHost(job.hostId);
       const row = await tx.getInstance(job.instanceId);
       if (!row) return;
+      switch (job.type) {
+        case "snapshot": {
+          const snap = await snapshotOf(tx, job);
+          if (snap) await moveSnapshot(tx, snap, "creating", "available", now);
+          return;
+        }
+        case "snapshot_delete": {
+          const snap = await snapshotOf(tx, job);
+          if (snap) await moveSnapshot(tx, snap, "deleting", "deleted", now);
+          return;
+        }
+        case "console":
+          return;
+        default:
+          break;
+      }
       const target: Partial<Record<JobRow["type"], InstanceState>> = {
         create: "running",
         start: "running",
         stop: "stopped",
         delete: "deleted",
+        resize: "stopped",
       };
       const to = target[job.type];
-      // A snapshot leaves the state as it is.
       if (!to || !canTransition(row.state, to)) return;
-      await move(tx, row, to, now);
-      if (to === "deleted") await ipam.release(tx, row.id, now);
+      let patch: Partial<InstanceRow> = {};
+      if (job.type === "resize" && row.pendingSize) {
+        // The resize took effect now: apply it and add it to the history.
+        patch = { spec: { ...row.spec, ...row.pendingSize }, pendingSize: null };
+        await tx.recordInstanceSize({ instanceId: row.id, effectiveFrom: now, ...row.pendingSize });
+      }
+      const next = await move(tx, row, to, now, patch);
+      if (to === "deleted") {
+        await ipam.release(tx, row.id, now);
+        await tx.markSnapshotsDeleted(row.id, now);
+      }
+      if (to === "running" && host?.state === "disabled") {
+        // Kill switch: anything that comes up on a disabled host is stopped.
+        await stopRunning(tx, next, now);
+      }
     },
     async failed(tx, job: JobRow, now) {
-      const row = await tx.getInstance(job.instanceId);
-      if (!row || !canTransition(row.state, "error")) return;
-      await move(tx, row, "error", now);
+      // Same lock order as `succeeded`: host, then instance.
+      await tx.lockHost(job.hostId);
+      switch (job.type) {
+        case "snapshot":
+        case "snapshot_delete": {
+          // A failed snapshot never breaks its instance.
+          const snap = await snapshotOf(tx, job);
+          if (snap) await moveSnapshot(tx, snap, job.type === "snapshot" ? "creating" : "deleting", "error", now);
+          return;
+        }
+        case "console":
+          return;
+        default: {
+          const row = await tx.getInstance(job.instanceId);
+          if (!row || !canTransition(row.state, "error")) return;
+          // A failed resize never took effect: the spec and the size history
+          // stay as they were, and the pending target is released.
+          await move(tx, row, "error", now, { pendingSize: null });
+        }
+      }
     },
   };
+
+  async function resize(
+    tx: StoreTx,
+    row: InstanceRow,
+    action: Extract<InstanceAction, { action: "resize" }>,
+    now: Date,
+  ): Promise<InstanceRow> {
+    if (row.state !== "stopped") throw conflict(row.state, "resize");
+    await requireHostEnabled(tx, row);
+    const size = {
+      vcpu: action.vcpu ?? row.spec.vcpu,
+      memoryMb: action.memoryMb ?? row.spec.memoryMb,
+      diskGb: action.diskGb ?? row.spec.diskGb,
+    };
+    if (size.diskGb < row.spec.diskGb) throw new HttpError(400, "invalid_resize", "A disk can only grow");
+    if (size.vcpu === row.spec.vcpu && size.memoryMb === row.spec.memoryMb && size.diskGb === row.spec.diskGb) {
+      throw new HttpError(400, "invalid_resize", "The new size is the current size");
+    }
+    const delta = {
+      instances: 0,
+      vcpu: size.vcpu - row.spec.vcpu,
+      memoryMb: size.memoryMb - row.spec.memoryMb,
+      diskGb: size.diskGb - row.spec.diskGb,
+    };
+    const reservation = await quotas.reserveDelta(tx, delta);
+    if (!reservation.ok) throw quotaExceeded(reservation.dimension);
+    if (row.hostId) {
+      const host = await tx.getHost(row.hostId);
+      const used = await tx.hostAllocated(row.hostId);
+      if (
+        host &&
+        ((delta.vcpu > 0 && used.vcpu + delta.vcpu > host.capacity.vcpu) ||
+          (delta.memoryMb > 0 && used.memoryMb + delta.memoryMb > host.capacity.memoryMb) ||
+          (delta.diskGb > 0 && used.diskGb + delta.diskGb > host.capacity.diskGb))
+      ) {
+        throw new HttpError(409, "no_host_capacity", "The host has no room for this size");
+      }
+    }
+    // Only the target is recorded (and reserved); the spec changes when the
+    // resize job succeeds. If it fails, the target is released and the
+    // instance goes to `error`, as for any other failed job.
+    const resizing = await move(tx, row, "resizing", now, { pendingSize: size });
+    const payload: ResizeJobPayload = { name: row.spec.name, ...size };
+    await deps.jobs().enqueue(tx, { hostId: row.hostId!, instanceId: row.id, type: "resize", payload, now });
+    return resizing;
+  }
 
   return {
     jobOutcomes,
 
-    async create({ projectId, idempotencyKey, spec, now }) {
-      if (!quotas.isProjectAllowed(projectId)) {
-        throw new HttpError(403, "project_not_allowed", "This project may not create instances");
-      }
+    async create({ serviceInstanceId, idempotencyKey, request, now }) {
+      const spec: InstanceSpec = { ...request, diskGb: request.diskGb ?? deps.defaultDiskGb };
       const image = images.getAvailable(spec.imageId);
       if (!image) throw new HttpError(400, "unknown_image", "Image is not available");
       if (spec.diskGb < image.minDiskGb) {
@@ -169,11 +353,17 @@ export function createInstances(deps: InstancesDeps): Instances {
       const hash = requestHash(spec);
 
       return store.transaction(async (tx) => {
+        const si = await tx.getServiceInstance(serviceInstanceId);
+        if (!si || si.status !== "active") throw new HttpError(404, "service_instance_not_found", "Service instance not found");
+        // D4: the allow-list holds Cloud project ids, checked through the service instance.
+        if (!quotas.isProjectAllowed(si.cloudProjectId)) {
+          throw new HttpError(403, "project_not_allowed", "This project may not create instances");
+        }
         // The pool lock comes first: it also serialises concurrent requests
         // that carry the same idempotency key.
         const reservation = await quotas.reserve(tx, spec);
 
-        const previous = await tx.getIdempotency(projectId, idempotencyKey);
+        const previous = await tx.getIdempotency(serviceInstanceId, idempotencyKey);
         if (previous) {
           if (previous.requestHash !== hash) {
             throw new HttpError(409, "idempotency_key_reused", "This Idempotency-Key was used with a different request");
@@ -183,17 +373,16 @@ export function createInstances(deps: InstancesDeps): Instances {
           return { instance: toInstance(existing), replayed: true };
         }
 
-        if (!reservation.ok) {
-          throw new HttpError(409, "quota_exceeded", `The pilot pool has no room: ${reservation.dimension} limit reached`);
-        }
-        if (await tx.findLiveInstanceByName(projectId, spec.name)) {
-          throw new HttpError(409, "name_taken", "An instance with this name already exists in the project");
+        if (!reservation.ok) throw quotaExceeded(reservation.dimension);
+        if (await tx.findLiveInstanceByName(serviceInstanceId, spec.name)) {
+          throw new HttpError(409, "name_taken", "An instance with this name already exists");
         }
 
         const draft: InstanceRow = {
           id: randomUUID(),
-          projectId,
+          serviceInstanceId,
           spec,
+          pendingSize: null,
           state: "pending",
           pendingReason: null,
           hostId: null,
@@ -203,50 +392,182 @@ export function createInstances(deps: InstancesDeps): Instances {
         };
         // The address hold references the instance, so insert the instance first.
         await tx.insertInstance(draft);
+        await tx.recordInstanceSize({
+          instanceId: draft.id,
+          effectiveFrom: now,
+          vcpu: spec.vcpu,
+          memoryMb: spec.memoryMb,
+          diskGb: spec.diskGb,
+        });
         const privateIp = await ipam.allocate(tx, draft.id, now);
         if (!privateIp) throw new HttpError(409, "address_pool_exhausted", "No private address is free");
         const row: InstanceRow = { ...draft, privateIp };
         await tx.updateInstance(row, "pending");
-        const id = row.id;
-        await tx.putIdempotency({ projectId, key: idempotencyKey, requestHash: hash, instanceId: id }, now);
+        await tx.putIdempotency({ serviceInstanceId, key: idempotencyKey, requestHash: hash, instanceId: row.id }, now);
         const placed = await tryPlace(tx, row, now);
         return { instance: toInstance(placed), replayed: false };
       });
     },
 
-    async list(projectId) {
-      return store.transaction(async (tx) => (await tx.listInstances(projectId)).map(toInstance));
+    async list(serviceInstanceId) {
+      return store.transaction(async (tx) => (await tx.listInstances(serviceInstanceId)).map(toInstance));
     },
 
-    async get(projectId, id) {
-      return store.transaction(async (tx) => toInstance(await owned(tx, projectId, id)));
+    async listAll(options = {}) {
+      return store.transaction(async (tx) => (await tx.listAllInstances(options)).map(toInstance));
     },
 
-    async act(projectId, id, action, now) {
+    async get(serviceInstanceId, id) {
+      return store.transaction(async (tx) => toInstance(await owned(tx, serviceInstanceId, id)));
+    },
+
+    async act(serviceInstanceId, id, action, now) {
       return store.transaction(async (tx) => {
-        const row = await owned(tx, projectId, id);
-        const [from, to] = action === "start" ? (["stopped", "starting"] as const) : (["running", "stopping"] as const);
-        if (row.state !== from) throw conflict(row.state, action);
+        // A resize reserves pool capacity: take the pool lock before reading
+        // the instance, so the size and state it checks are current
+        // (lock order: pool, host, instance).
+        if (action.action === "resize") await tx.lockPool();
+        const row = await owned(tx, serviceInstanceId, id);
+        if (action.action === "resize") return toInstance(await resize(tx, row, action, now));
+        const [from, to] =
+          action.action === "start" ? (["stopped", "starting"] as const) : (["running", "stopping"] as const);
+        if (row.state !== from) throw conflict(row.state, action.action);
+        if (action.action === "start") await requireHostEnabled(tx, row);
         const next = await move(tx, row, to, now);
-        await lifecycleJob(tx, next, action, now);
+        await lifecycleJob(tx, next, action.action, now);
         return toInstance(next);
       });
     },
 
-    async remove(projectId, id, now) {
+    async remove(serviceInstanceId, id, now) {
       return store.transaction(async (tx) => {
-        const row = await owned(tx, projectId, id);
+        const row = await owned(tx, serviceInstanceId, id);
         if (!canTransition(row.state, "deleting")) throw conflict(row.state, "delete");
         const deleting = await move(tx, row, "deleting", now, { pendingReason: null });
         if (!row.hostId) {
           // Never placed: nothing exists on a host, so finish here.
           const deleted = await move(tx, deleting, "deleted", now);
           await ipam.release(tx, row.id, now);
+          await tx.markSnapshotsDeleted(row.id, now);
           return toInstance(deleted);
         }
         await lifecycleJob(tx, deleting, "delete", now);
         return toInstance(deleting);
       });
+    },
+
+    async createSnapshot(serviceInstanceId, id, name, now) {
+      return store.transaction(async (tx) => {
+        // Pool lock first, then read the instance: a concurrent resize holds
+        // the same lock, so the state and disk size checked here are the
+        // ones the reservation is made against (lock order: pool, host,
+        // instance).
+        await tx.lockPool();
+        const row = await owned(tx, serviceInstanceId, id);
+        if ((row.state !== "running" && row.state !== "stopped") || !row.hostId) throw conflict(row.state, "snapshot");
+        await requireHostEnabled(tx, row);
+        const reservation = await quotas.reserveDelta(tx, { instances: 0, vcpu: 0, memoryMb: 0, diskGb: row.spec.diskGb });
+        if (!reservation.ok) throw quotaExceeded(reservation.dimension);
+        const host = await tx.getHost(row.hostId);
+        const used = await tx.hostAllocated(row.hostId);
+        if (host && used.diskGb + row.spec.diskGb > host.capacity.diskGb) {
+          throw new HttpError(409, "no_host_capacity", "The host has no disk room for a snapshot");
+        }
+        if (await tx.findLiveSnapshotByName(row.id, name)) {
+          throw new HttpError(409, "snapshot_name_taken", "A snapshot with this name already exists");
+        }
+        const snap: SnapshotRow = {
+          id: randomUUID(),
+          instanceId: row.id,
+          name,
+          state: "creating",
+          sizeGb: row.spec.diskGb,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await tx.insertSnapshot(snap);
+        await deps.jobs().enqueue(tx, {
+          hostId: row.hostId,
+          instanceId: row.id,
+          type: "snapshot",
+          payload: { snapshotName: name },
+          now,
+        });
+        return toSnapshot(snap);
+      });
+    },
+
+    async listSnapshots(serviceInstanceId, id) {
+      return store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        return (await tx.listSnapshots(row.id)).map(toSnapshot);
+      });
+    },
+
+    async deleteSnapshot(serviceInstanceId, id, snapshotId, now) {
+      return store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        const snap = await tx.getSnapshot(snapshotId);
+        if (!snap || snap.instanceId !== row.id || snap.state === "deleted") throw SNAPSHOT_NOT_FOUND();
+        if (snap.state !== "available" && snap.state !== "error") {
+          throw new HttpError(409, "invalid_state", `Cannot delete a snapshot that is ${snap.state}`);
+        }
+        if (!row.hostId) {
+          const gone: SnapshotRow = { ...snap, state: "deleted", updatedAt: now };
+          await tx.updateSnapshot(gone, snap.state);
+          return toSnapshot(gone);
+        }
+        await requireHostEnabled(tx, row);
+        const deleting: SnapshotRow = { ...snap, state: "deleting", updatedAt: now };
+        if (!(await tx.updateSnapshot(deleting, snap.state))) {
+          throw new HttpError(409, "concurrent_update", "The snapshot changed; retry the request");
+        }
+        await deps.jobs().enqueue(tx, {
+          hostId: row.hostId,
+          instanceId: row.id,
+          type: "snapshot_delete",
+          payload: { snapshotName: snap.name },
+          now,
+        });
+        return toSnapshot(deleting);
+      });
+    },
+
+    async openConsole(serviceInstanceId, id, clock) {
+      const job = await store.transaction(async (tx) => {
+        const row = await owned(tx, serviceInstanceId, id);
+        if (row.state !== "running" || !row.hostId) throw conflict(row.state, "open a console on");
+        await requireHostEnabled(tx, row);
+        return lifecycleJob(tx, row, "console", clock());
+      });
+      const jobs = deps.jobs();
+      const deadline = Date.now() + deps.consoleWaitMs;
+      for (;;) {
+        const progress = await jobs.takeResult(job.id, clock());
+        if (progress.state === "succeeded") {
+          const ticket = ConsoleTicket.safeParse(progress.result);
+          if (!ticket.success) break;
+          return ticket.data;
+        }
+        if (progress.state === "failed") break;
+        if (Date.now() >= deadline) {
+          // Nobody will wait for this ticket: make sure it is never issued.
+          if (await jobs.cancel(job.id, "console_timeout", clock())) {
+            throw new HttpError(504, "console_timeout", "The host did not answer in time. Try again");
+          }
+          continue;
+        }
+        await sleep(POLL_MS);
+      }
+      throw new HttpError(502, "console_unavailable", "The console could not be opened. Try again");
+    },
+
+    async stopAllOnHost(tx, hostId, now) {
+      let stopped = 0;
+      for (const row of await tx.listLiveInstancesOnHost(hostId)) {
+        if (await stopRunning(tx, row, now)) stopped += 1;
+      }
+      return stopped;
     },
 
     async placePending(now) {

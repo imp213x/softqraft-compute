@@ -1,7 +1,7 @@
 /**
  * Driver registry, keyed by driver name. Drivers are registered as
  * factories so each agent process builds its own instance with its own
- * configuration. C1a registers only `fake`.
+ * configuration. This repository registers only `fake`; `proxmox` arrives in C1e.
  */
 
 import type { HypervisorDriver } from "./driver.js";
@@ -35,7 +35,7 @@ export class DriverRegistry {
   }
 }
 
-/** A registry holding the drivers this build ships: `fake` only in C1a. */
+/** A registry holding the drivers this build ships: `fake` only until C1e. */
 export function defaultDriverRegistry(): DriverRegistry {
   const registry = new DriverRegistry();
   registry.register("fake", () => new FakeDriver());

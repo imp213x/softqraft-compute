@@ -19,6 +19,9 @@ const LEGAL = new Set([
   "stopped>error",
   "starting>running",
   "starting>error",
+  "stopped>resizing",
+  "resizing>stopped",
+  "resizing>error",
   "deleting>deleted",
   "deleting>error",
   "error>deleting",
@@ -29,7 +32,7 @@ describe("instance state machine", () => {
     assert.deepEqual(Object.keys(TRANSITIONS).sort(), [...INSTANCE_STATES].sort());
   });
 
-  it("allows exactly the 17 listed moves", () => {
+  it("allows exactly the 20 listed moves", () => {
     let count = 0;
     for (const from of INSTANCE_STATES) count += TRANSITIONS[from].length;
     assert.equal(count, LEGAL.size);

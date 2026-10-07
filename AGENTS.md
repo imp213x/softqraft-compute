@@ -16,11 +16,12 @@ This file supplements the canonical workspace contract at `C:\Projects\AGENTS.md
 
 - Never touch a real host, Proxmox, Hetzner, Cloudflare or AWS from this repository's code, tests or scripts without an approved brief for that step. Changes to a production host need founder approval on the day.
 - The pilot network never overlaps `10.20.0.0/24` (production). Pilot caps come from env and hold under concurrency.
-- Keys live in env only. Never log keys, tokens, signatures, enrolment tokens, job envelopes, headers or bodies. Tests generate keys at run time.
+- Keys live in env only. Never log keys, grants, session tokens, cookies, console tickets, signatures, enrolment tokens, job envelopes, headers or bodies. Grants and session tokens are stored only as SHA-256 hashes. Tests generate keys at run time.
+- Customer and staff access comes only through cloud-federation-v1 launches and sessions. Never add a local login, a break-glass credential or a claim the contract does not define without an approved brief.
 
 ## Validation and delivery
 
-- `pnpm run test:ci` with a real Postgres (`DATABASE_URL`): build, typecheck, unit tests, Postgres tests, `check:boundaries`, `check:federation-vendor`. Never skip, disable or weaken a test to get green; report what did not run.
+- `pnpm run test:ci` with a real Postgres (`DATABASE_URL`): build, typecheck, unit tests, the §9 conformance runner, Postgres tests, `check:boundaries`, `check:federation-vendor`. Never skip, disable or weaken a test to get green; report what did not run.
 - Work on a branch, commit after each logical step, never merge. The founder approves merges.
 - In reports, distinguish implemented, locally tested, CI-tested, deployed and production-verified.
 

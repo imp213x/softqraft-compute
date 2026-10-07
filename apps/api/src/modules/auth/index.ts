@@ -1,16 +1,16 @@
 /**
  * Auth: who may call which route.
  *
- * - Cloud-facing routes: Cloud-signed requests (cloud-federation-v1 §2,
- *   audience `compute`), verified by the vendored @softqraft/federation kit.
- *   Off unless CLOUD_FEDERATION_ENABLED=true; when off, the routes are not
+ * - `/cloud/v1/*`: Cloud-signed requests (cloud-federation-v1 §2, audience
+ *   `compute`), verified by the vendored @softqraft/federation kit. Off
+ *   unless CLOUD_FEDERATION_ENABLED=true; when off, the routes are not
  *   registered at all and answer 404.
  * - Agent routes: each host signs with its own enrolled Ed25519 key. Body
- *   hash, a timestamp within 300 s and a single-use nonce are checked.
- * - Fleet (staff) routes: Cloud-signed, then an operator role check. The
- *   federation contract carries no operator-role claim on signed requests,
- *   so the default authoriser denies every request (an open question for
- *   C1c, recorded in the C1a report). No claim is invented here.
+ *   hash, a timestamp within 300 s and a single-use nonce are checked. A
+ *   disabled host still authenticates, so that it can claim the stop jobs
+ *   the kill switch queued (the jobs module gives it nothing else).
+ * - Console and Admin (browser) routes use Console and operator sessions;
+ *   see the sessions module.
  *
  * Nothing here logs headers, signatures, keys or bodies.
  */
@@ -116,7 +116,6 @@ function failureMessage(reason: string): string {
 export const AGENT_AUTH_ERRORS = Object.freeze({
   malformed: { status: 400, code: "agent_malformed", message: "Agent signature headers are missing or malformed" },
   unknownHost: { status: 401, code: "agent_unknown_host", message: "Unknown host" },
-  disabled: { status: 403, code: "host_disabled", message: "Host is disabled" },
   stale: { status: 401, code: "agent_stale", message: "Agent request timestamp is outside the allowed window" },
   signature: { status: 401, code: "agent_signature", message: "Agent request signature is invalid" },
   replay: { status: 401, code: "agent_replay", message: "Agent request nonce was already used" },
@@ -134,7 +133,6 @@ export function agentAuth(deps: { store: ComputeStore; hosts: Hosts; clock: Cloc
     const outcome = await deps.store.transaction(async (tx) => {
       const host = await tx.getHost(headers.hostId);
       if (!host) return AGENT_AUTH_ERRORS.unknownHost;
-      if (host.state === "disabled") return AGENT_AUTH_ERRORS.disabled;
       if (!agentTimestampFresh(headers.timestamp, now)) return AGENT_AUTH_ERRORS.stale;
       let publicKey: KeyObject;
       try {
@@ -158,31 +156,5 @@ export function agentAuth(deps: { store: ComputeStore; hosts: Hosts; clock: Cloc
     });
     if ("code" in outcome) return sendError(req, reply, asHttp(outcome));
     req.agentHost = outcome;
-  };
-}
-
-/** Decides whether a verified Cloud request comes from a platform operator. */
-export interface OperatorAuthorizer {
-  authorize(req: FastifyRequest): Promise<boolean>;
-}
-
-/**
- * The default: deny. cloud-federation-v1 has operator roles only inside
- * operator-launch bodies (§8.2), not as a claim on signed requests, so a
- * signed request alone does not prove an operator role.
- */
-export const denyAllOperators: OperatorAuthorizer = {
-  authorize: async () => false,
-};
-
-export function operatorAuth(authorizer: OperatorAuthorizer): preHandlerAsyncHookHandler {
-  return async function requireOperator(req: FastifyRequest, reply: FastifyReply) {
-    if (!(await authorizer.authorize(req))) {
-      return sendError(
-        req,
-        reply,
-        new HttpError(403, "operator_role_required", "An operator role is required for fleet routes"),
-      );
-    }
   };
 }

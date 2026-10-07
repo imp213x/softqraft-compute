@@ -26,14 +26,14 @@ describe("splitByHour", () => {
 describe("toUsageRecord", () => {
   it("turns seconds into hours", () => {
     const r = toUsageRecord({
-      projectId: "p",
+      serviceInstanceId: "si_1",
       hourStart: new Date("2026-10-07T10:00:00Z"),
       vcpuSeconds: 2 * 3600,
       memoryMbSeconds: 1024 * 1800,
       diskGbSeconds: 20 * 3600,
     });
     assert.deepEqual(r, {
-      projectId: "p",
+      serviceInstanceId: "si_1",
       hourStart: "2026-10-07T10:00:00.000Z",
       vcpuHours: 2,
       memoryGbHours: 0.5,

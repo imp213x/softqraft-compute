@@ -10,14 +10,17 @@
  * | provisioning | error                               | create job failed after last attempt  |
  * | running      | stopping                            | stop action                           |
  * | running      | deleting                            | delete                                |
- * | running      | error                               | snapshot job failed after last attempt|
+ * | running      | error                               | (kept from C1a; no job sets it now)   |
  * | stopping     | stopped                             | stop job succeeded                    |
  * | stopping     | error                               | stop job failed after last attempt    |
  * | stopped      | starting                            | start action                          |
  * | stopped      | deleting                            | delete                                |
- * | stopped      | error                               | snapshot job failed after last attempt|
+ * | stopped      | resizing                            | resize action, resize job queued      |
+ * | stopped      | error                               | (kept from C1a; no job sets it now)   |
  * | starting     | running                             | start job succeeded                   |
  * | starting     | error                               | start job failed after last attempt   |
+ * | resizing     | stopped                             | resize job succeeded                  |
+ * | resizing     | error                               | resize job failed after last attempt  |
  * | deleting     | deleted                             | delete job succeeded (or never placed)|
  * | deleting     | error                               | delete job failed after last attempt  |
  * | error        | deleting                            | delete to clean up                    |
@@ -31,8 +34,9 @@ export const TRANSITIONS: Readonly<Record<InstanceState, readonly InstanceState[
   provisioning: Object.freeze(["running", "error"] as const),
   running: Object.freeze(["stopping", "deleting", "error"] as const),
   stopping: Object.freeze(["stopped", "error"] as const),
-  stopped: Object.freeze(["starting", "deleting", "error"] as const),
+  stopped: Object.freeze(["starting", "resizing", "deleting", "error"] as const),
   starting: Object.freeze(["running", "error"] as const),
+  resizing: Object.freeze(["stopped", "error"] as const),
   deleting: Object.freeze(["deleted", "error"] as const),
   deleted: Object.freeze([] as const),
   error: Object.freeze(["deleting"] as const),

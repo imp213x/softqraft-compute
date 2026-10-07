@@ -12,7 +12,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { after, describe, it } from "node:test";
 import pg from "pg";
 import { loadMigrations, migrate, PostgresComputeStore } from "../src/store/index.js";
-import { harness, idempotencyKey, instanceOf, PROJECT } from "./helpers.js";
+import { hashGrant } from "@softqraft/federation";
+import { grantFrom, harness, idempotencyKey, instanceOf, principal, SI } from "./helpers.js";
+import { findingsSuite } from "./findings.js";
+import { raceSuite } from "./races.js";
 import { behaviourSuite } from "./suites.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -59,12 +62,54 @@ describe("migrations", () => {
     schemas.push(schema);
     await withClient(null, (c) => c.query(`CREATE SCHEMA ${schema}`));
     const first = await withClient(schema, (c) => migrate(c));
-    assert.deepEqual(first.applied, ["001_initial"]);
+    assert.deepEqual(first.applied, ["001_initial", "002_service_instances", "003_instance_sizes"]);
     const second = await withClient(schema, (c) => migrate(c));
-    assert.deepEqual(second, { applied: [], skipped: ["001_initial"] });
-    const { rows } = await withClient(schema, (c) => c.query("SELECT id, checksum FROM schema_migrations"));
-    const [m] = await loadMigrations();
-    assert.deepEqual(rows, [{ id: "001_initial", checksum: m!.checksum }]);
+    assert.deepEqual(second, { applied: [], skipped: ["001_initial", "002_service_instances", "003_instance_sizes"] });
+    const { rows } = await withClient(schema, (c) => c.query("SELECT id, checksum FROM schema_migrations ORDER BY id"));
+    const all = await loadMigrations();
+    assert.deepEqual(rows, all.map((m) => ({ id: m.id, checksum: m.checksum })));
+  });
+
+  it("003 backfills each existing instance's size from its creation", async () => {
+    const schema = `c1b_${randomBytes(6).toString("hex")}`;
+    schemas.push(schema);
+    await withClient(null, (c) => c.query(`CREATE SCHEMA ${schema}`));
+    const all = await loadMigrations();
+    await withClient(schema, (c) => migrate(c, all.slice(0, 2)));
+    await withClient(schema, async (c) => {
+      await c.query(
+        `INSERT INTO service_instances VALUES ('si-1', '11111111-1111-4111-8111-111111111111',
+           '22222222-2222-4222-8222-222222222222', 'X', 'eu-central', 'active', now(), now())`,
+      );
+      await c.query(
+        `INSERT INTO instances (id, service_instance_id, name, spec, vcpu, memory_mb, disk_gb, state, created_at, updated_at)
+         VALUES ('6f1c1d8e-8d0a-4c55-9a0e-0d6d9b8f2c11', 'si-1', 'old', '{}', 2, 2048, 16, 'stopped',
+                 '2026-10-01T00:00:00Z', now())`,
+      );
+    });
+    const { applied } = await withClient(schema, (c) => migrate(c, all));
+    assert.deepEqual(applied, ["003_instance_sizes"]);
+    const { rows } = await withClient(schema, (c) => c.query("SELECT * FROM instance_sizes"));
+    assert.equal(rows.length, 1);
+    assert.equal(new Date(rows[0].effective_from).toISOString(), "2026-10-01T00:00:00.000Z");
+    assert.deepEqual([rows[0].vcpu, rows[0].memory_mb, rows[0].disk_gb], [2, 2048, 16]);
+  });
+
+  it("002 refuses to re-key instances that already exist", async () => {
+    const schema = `c1b_${randomBytes(6).toString("hex")}`;
+    schemas.push(schema);
+    await withClient(null, (c) => c.query(`CREATE SCHEMA ${schema}`));
+    const [first, second] = await loadMigrations();
+    await withClient(schema, (c) => migrate(c, [first!]));
+    await withClient(schema, (c) =>
+      c.query(
+        `INSERT INTO instances (id, project_id, name, spec, vcpu, memory_mb, disk_gb, state, created_at, updated_at)
+         VALUES ('6f1c1d8e-8d0a-4c55-9a0e-0d6d9b8f2c11', '22222222-2222-4222-8222-222222222222', 'old', '{}', 1, 512, 10, 'pending', now(), now())`,
+      ),
+    );
+    await assert.rejects(withClient(schema, (c) => migrate(c, [first!, second!])), /re-keying them needs a written plan/);
+    const { rows } = await withClient(schema, (c) => c.query("SELECT id FROM schema_migrations"));
+    assert.deepEqual(rows, [{ id: "001_initial" }], "002 rolled back");
   });
 
   it("refuse to run when an applied migration has changed", async () => {
@@ -123,13 +168,47 @@ describe("postgres-only guarantees", () => {
       // Twelve creates, each a full transaction on its own pooled connection.
       const results = await Promise.all(
         Array.from({ length: 12 }, (_, i) =>
-          h.createInstance({ name: `race-${i}`, vcpu: 1, memoryMb: 512, diskGb: 10 }, idempotencyKey(), PROJECT),
+          h.createInstance({ name: `race-${i}`, vcpu: 1, memoryMb: 512, diskGb: 10 }, idempotencyKey()),
         ),
       );
       const created = results.filter((r) => r.statusCode === 201).length;
       assert.equal(created, 3, "COMPUTE_POOL_MAX_INSTANCES=3");
       const { rows } = await store.pool.query("SELECT count(*)::int AS n FROM instances WHERE state <> 'deleted'");
       assert.equal(rows[0].n, 3);
+    } finally {
+      await h.close();
+      await store.close();
+    }
+  });
+
+  it("stores grants and session tokens only as SHA-256 hashes, and revokes in SQL", async () => {
+    const store = await freshStore();
+    const h = await harness({ store });
+    try {
+      const launch = await h.cloud("POST", `/cloud/v1/service-instances/${SI}/console-launches`, {
+        principal: principal("user_pg"),
+        role: "admin",
+        returnPath: "/console/",
+      });
+      const grant = grantFrom(launch.json().launchUrl);
+      const consoleSession = await h.consoleSession("admin", SI, "user_pg");
+      const op = await h.operatorSession("owner", "user_pg");
+      const dump = JSON.stringify(
+        await Promise.all(
+          ["console_launch_grants", "console_sessions", "operator_launch_grants", "operator_sessions", "security_events"].map(
+            async (t) => (await store.pool.query(`SELECT * FROM ${t}`)).rows,
+          ),
+        ),
+      );
+      for (const secret of [grant, consoleSession.token, op.token]) assert.ok(!dump.includes(secret));
+      assert.ok(dump.includes(hashGrant(grant)) && dump.includes(hashGrant(consoleSession.token)));
+
+      const res = await h.cloud("POST", "/cloud/v1/principals/user_pg/revocations");
+      assert.deepEqual(res.json(), { revokedSessions: 2 });
+      const { rows } = await store.pool.query("SELECT revoked_after FROM cloud_principals WHERE subject = 'user_pg'");
+      assert.equal(new Date(rows[0].revoked_after).toISOString(), h.clock.now().toISOString());
+      assert.equal((await h.browser(consoleSession, "GET", "/console/v1/instances")).statusCode, 401);
+      assert.equal((await h.browser(op, "GET", "/admin/v1/fleet/hosts")).statusCode, 401);
     } finally {
       await h.close();
       await store.close();
@@ -151,3 +230,5 @@ describe("postgres-only guarantees", () => {
 });
 
 behaviourSuite("postgres store", freshStore);
+raceSuite("postgres store", freshStore, { concurrent: true });
+findingsSuite("postgres store", freshStore);

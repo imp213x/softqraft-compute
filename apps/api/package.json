@@ -16,7 +16,8 @@
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test 'src/**/*.test.ts' 'test/**/*.test.ts'",
-    "test:pg": "tsx --test 'test/**/*.pg-test.ts'"
+    "test:pg": "tsx --test 'test/**/*.pg-test.ts'",
+    "test:conformance": "tsx --test 'test/**/*.conformance.ts'"
   },
   "dependencies": {
     "@softqraft/compute-contracts": "workspace:*",

@@ -6,32 +6,63 @@
  * - probes: `/health`, `/ready`, no auth;
  * - agent: `/v1/agent/enrol` (one-time token), other `/v1/agent/*` signed by
  *   the host's key;
- * - Cloud-facing: projects, images and usage, Cloud-signed, registered only
- *   when CLOUD_FEDERATION_ENABLED=true (otherwise 404, as if unrouted);
- * - fleet: inside the Cloud context, plus an operator check.
+ * - Cloud (server): `/cloud/v1/*`, Cloud-signed (audience `compute`);
+ * - Console (browser): `/console/v1/*`, a Console session cookie;
+ * - Admin (browser, staff): `/admin/v1/*`, an operator session cookie.
+ * Cloud and Console exist only when CLOUD_FEDERATION_ENABLED=true, and
+ * Admin and `/cloud/v1/operator-launches` only when
+ * CLOUD_OPERATOR_LAUNCH_ENABLED=true as well; otherwise they are not
+ * registered and answer 404, as if unrouted.
  */
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { DriverRegistry } from "@softqraft/compute-driver";
 import type { ComputeConfig } from "./config.js";
+import { applyBrowserSecurityHeaders } from "./lib/browser.js";
 import { HttpError, sendError, toHttpError } from "./lib/errors.js";
 import { MAX_BODY_BYTES, registerRawBody, systemClock, type Clock } from "./lib/http.js";
-import { agentAuth, cloudAuth, denyAllOperators, operatorAuth, type OperatorAuthorizer } from "./modules/auth/index.js";
+import { MemoryRateLimiter, type RateLimiter } from "./lib/rate-limit.js";
+import { agentAuth, cloudAuth } from "./modules/auth/index.js";
 import { registerHealthRoutes } from "./modules/health/index.js";
-import { createHosts, registerEnrolRoute, registerFleetRoutes, type Hosts } from "./modules/hosts/index.js";
-import { createImages, registerImageRoutes, type Images } from "./modules/images/index.js";
+import { createHosts, registerEnrolRoute, registerFleetRoutes, type FleetAudit, type Hosts } from "./modules/hosts/index.js";
+import { createImages, registerConsoleImageRoutes, type Images } from "./modules/images/index.js";
 import {
   createInstances,
   InvalidTransitionError,
-  registerInstanceRoutes,
+  registerCloudInstanceRoutes,
+  registerConsoleInstanceRoutes,
+  registerFleetInstanceRoutes,
   type Instances,
 } from "./modules/instances/index.js";
 import { createIpam } from "./modules/ipam/index.js";
 import { createJobs, registerAgentJobRoutes, type Jobs } from "./modules/jobs/index.js";
 import { createQuotas, type Quotas } from "./modules/quotas/index.js";
 import { createScheduler } from "./modules/scheduler/index.js";
-import { createUsage, registerAgentUsageRoutes, registerUsageRoutes, type Usage } from "./modules/usage/index.js";
+import {
+  createServiceInstances,
+  registerServiceInstanceRoutes,
+  type ServiceInstances,
+} from "./modules/service-instances/index.js";
+import {
+  consoleSessionGuard,
+  createSessions,
+  operatorSessionGuard,
+  registerAdminAuthRoutes,
+  registerAdminMeRoute,
+  registerCloudLaunchRoutes,
+  registerConsoleAuthRoutes,
+  registerConsoleMeRoute,
+  type BrowserDeps,
+  type Sessions,
+} from "./modules/sessions/index.js";
+import {
+  createUsage,
+  registerAgentUsageRoutes,
+  registerCloudUsageRoutes,
+  registerConsoleUsageRoutes,
+  type Usage,
+} from "./modules/usage/index.js";
 import type { ComputeStore } from "./store/index.js";
 
 export interface AppDeps {
@@ -39,8 +70,8 @@ export interface AppDeps {
   store: ComputeStore;
   drivers: DriverRegistry;
   clock?: Clock;
-  /** Fleet route authoriser. Defaults to deny-all (see modules/auth). */
-  operatorAuthorizer?: OperatorAuthorizer;
+  /** Real-time pause between console polls (tests shorten it). */
+  sleep?: (ms: number) => Promise<void>;
   /** Where logs go (tests capture them). Defaults to stdout. */
   logStream?: { write(line: string): void };
 }
@@ -52,8 +83,15 @@ export interface Services {
   jobs: Jobs;
   hosts: Hosts;
   usage: Usage;
-  /** Periodic work: expired leases, pending placement, old nonces. */
+  serviceInstances: ServiceInstances;
+  sessions: Sessions;
+  /** Periodic work: expired leases, pending placement, old nonces, grants, sessions and results. */
   maintenance(now: Date): Promise<void>;
+}
+
+/** The URL launch links point at: COMPUTE_PUBLIC_URL, or the local listener. */
+export function publicBase(config: ComputeConfig): string {
+  return config.publicUrl ?? `http://127.0.0.1:${config.port}`;
 }
 
 export function buildServices(deps: AppDeps): Services {
@@ -70,6 +108,9 @@ export function buildServices(deps: AppDeps): Services {
     scheduler,
     ipam,
     images,
+    defaultDiskGb: config.defaultDiskGb,
+    consoleWaitMs: config.consoleWaitSeconds * 1000,
+    sleep: deps.sleep,
     jobs: () => {
       if (!jobs) throw new Error("jobs module is not ready");
       return jobs;
@@ -89,9 +130,11 @@ export function buildServices(deps: AppDeps): Services {
   const hosts = createHosts({
     store,
     isKnownDriver: (name) => drivers.has(name),
-    defaultTokenTtlSeconds: config.enrolmentTokenTtlSeconds,
+    onDisable: (tx, hostId, now) => instances.stopAllOnHost(tx, hostId, now),
   });
   const usage = createUsage({ store });
+  const serviceInstances = createServiceInstances({ store, regionId: config.regionId });
+  const sessions = createSessions({ store, publicUrl: publicBase(config) });
   const readyJobs = jobs;
 
   return {
@@ -101,9 +144,13 @@ export function buildServices(deps: AppDeps): Services {
     jobs: readyJobs,
     hosts,
     usage,
+    serviceInstances,
+    sessions,
     async maintenance(now) {
       await readyJobs.reapExpiredLeases(now);
       await instances.placePending(now);
+      await readyJobs.clearStaleResults(now);
+      await sessions.prune(now);
       await store.transaction((tx) => tx.pruneNonces(now));
     },
   };
@@ -113,6 +160,7 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
   const clock = deps.clock ?? systemClock;
   const services = buildServices(deps);
   const { config, store } = deps;
+  const limiter: RateLimiter = new MemoryRateLimiter();
 
   const app = Fastify({
     logger:
@@ -120,12 +168,14 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
         ? false
         : {
             level: config.logLevel,
-            // Belt and braces: request headers are not logged by default.
+            // Belt and braces: request and response headers (cookies,
+            // signatures, Set-Cookie) are never logged.
             redact: ["req.headers", "res.headers"],
             ...(deps.logStream ? { stream: deps.logStream } : {}),
           },
     bodyLimit: MAX_BODY_BYTES,
     genReqId: () => randomUUID(),
+    trustProxy: config.trustedProxies.length > 0 ? config.trustedProxies : false,
   });
 
   registerRawBody(app);
@@ -155,16 +205,74 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
 
   if (config.federation.enabled) {
     const publicKeys = config.federation.publicKeys;
+    const operatorLaunch = config.federation.operatorLaunch;
+
+    // Cloud (server to server): every request Cloud-signed.
     await app.register(async (cloud) => {
       cloud.addHook("preHandler", cloudAuth({ publicKeys, store, clock }));
-      registerInstanceRoutes(cloud, { instances: services.instances, clock });
-      registerImageRoutes(cloud, services.images);
-      registerUsageRoutes(cloud, { usage: services.usage, clock });
-      await cloud.register(async (fleet) => {
-        fleet.addHook("preHandler", operatorAuth(deps.operatorAuthorizer ?? denyAllOperators));
-        registerFleetRoutes(fleet, { hosts: services.hosts, clock });
+      registerServiceInstanceRoutes(cloud, {
+        serviceInstances: services.serviceInstances,
+        clock,
+        publicUrl: publicBase(config),
+      });
+      registerCloudLaunchRoutes(cloud, {
+        sessions: services.sessions,
+        serviceInstances: services.serviceInstances,
+        clock,
+        operatorLaunch,
+      });
+      registerCloudInstanceRoutes(cloud, { instances: services.instances, serviceInstances: services.serviceInstances });
+      registerCloudUsageRoutes(cloud, { usage: services.usage, clock, serviceInstances: services.serviceInstances });
+    });
+
+    const browser: BrowserDeps = {
+      sessions: services.sessions,
+      clock,
+      publicUrl: config.publicUrl,
+      cookieSecure: config.cookieSecure,
+      limiter,
+    };
+
+    // Console (customer browser, same origin).
+    await app.register(async (consoleApp) => {
+      consoleApp.addHook("onSend", async (_req, reply, payload) => {
+        applyBrowserSecurityHeaders(reply);
+        return payload;
+      });
+      registerConsoleAuthRoutes(consoleApp, browser);
+      await consoleApp.register(async (guarded) => {
+        guarded.addHook("preHandler", consoleSessionGuard(browser));
+        registerConsoleMeRoute(guarded);
+        registerConsoleInstanceRoutes(guarded, { instances: services.instances, clock });
+        registerConsoleImageRoutes(guarded, services.images);
+        registerConsoleUsageRoutes(guarded, { usage: services.usage, clock });
       });
     });
+
+    // Admin (staff browser, same origin), only while operator launch is on.
+    if (operatorLaunch) {
+      const audit: FleetAudit = (req, action, now) => async (tx, detail) => {
+        const s = req.operatorSession;
+        await services.sessions.recordIn(
+          tx,
+          { action, subject: s?.subject ?? null, sessionId: s?.id ?? null, role: s?.role ?? null, detail },
+          now,
+        );
+      };
+      await app.register(async (adminApp) => {
+        adminApp.addHook("onSend", async (_req, reply, payload) => {
+          applyBrowserSecurityHeaders(reply);
+          return payload;
+        });
+        registerAdminAuthRoutes(adminApp, browser);
+        await adminApp.register(async (guarded) => {
+          guarded.addHook("preHandler", operatorSessionGuard(browser));
+          registerAdminMeRoute(guarded);
+          registerFleetRoutes(guarded, { hosts: services.hosts, clock, audit });
+          registerFleetInstanceRoutes(guarded, { instances: services.instances });
+        });
+      });
+    }
   }
 
   return { app, services };

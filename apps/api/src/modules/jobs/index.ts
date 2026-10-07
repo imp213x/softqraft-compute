@@ -9,12 +9,21 @@
  * - A failed attempt goes back to the queue until COMPUTE_JOB_MAX_ATTEMPTS
  *   is reached; then the job and its instance go to `error`.
  * - An expired lease returns the job to the queue the same way.
+ * - A `console` job completes with a ticket (`result`), which the API hands
+ *   to the browser once (`takeResult`) and then clears.
+ * - A disabled host (the kill switch) may claim only `stop` and `delete` jobs.
  *
  * Envelopes, signatures and keys are never logged.
  */
 
 import { randomUUID, type KeyObject } from "node:crypto";
-import type { JobPayload, JobType, SignedJob } from "@softqraft/compute-contracts";
+import {
+  CONSOLE_TICKET_MAX_SECONDS,
+  ConsoleTicket,
+  type JobPayload,
+  type JobType,
+  type SignedJob,
+} from "@softqraft/compute-contracts";
 import { publicKeyPem, signJob } from "@softqraft/compute-jobs";
 import { HttpError } from "../../lib/errors.js";
 import type { ComputeStore, JobRow, StoreTx } from "../../store/index.js";
@@ -42,22 +51,70 @@ export interface JobsDeps {
   beforeClaim?: (now: Date) => Promise<void>;
 }
 
+/** What `takeResult` sees of a job. */
+export type JobProgress =
+  | { state: "pending" }
+  | { state: "succeeded"; result: Record<string, unknown> | null }
+  | { state: "failed" };
+
+/** How long an untaken console ticket may stay in the database. */
+export const RESULT_RETENTION_SECONDS = CONSOLE_TICKET_MAX_SECONDS;
+
 export interface Jobs {
   enqueue(
     tx: StoreTx,
-    input: { hostId: string; instanceId: string; type: JobType; payload: JobPayload; now: Date },
+    input: {
+      hostId: string;
+      instanceId: string;
+      type: JobType;
+      payload: JobPayload;
+      now: Date;
+      /** Defaults to COMPUTE_JOB_MAX_ATTEMPTS. */
+      maxAttempts?: number;
+    },
   ): Promise<JobRow>;
-  claim(hostId: string, now: Date): Promise<SignedJob | null>;
+  /** Lease the host's oldest queued job; with `types`, only jobs of those types. */
+  claim(hostId: string, now: Date, options?: { types?: readonly JobType[] }): Promise<SignedJob | null>;
   heartbeat(hostId: string, jobId: string, attempt: number, now: Date): Promise<Date>;
-  complete(hostId: string, jobId: string, attempt: number, now: Date): Promise<JobRow>;
+  complete(
+    hostId: string,
+    jobId: string,
+    attempt: number,
+    result: Record<string, unknown> | undefined,
+    now: Date,
+  ): Promise<JobRow>;
+  /** Read a job's progress; a succeeded job's result is returned once and cleared. */
+  takeResult(jobId: string, now: Date): Promise<JobProgress>;
+  /** Fail a job that has not succeeded yet (no retry). True when it was cancelled. */
+  cancel(jobId: string, reason: string, now: Date): Promise<boolean>;
   fail(hostId: string, jobId: string, attempt: number, error: string, now: Date): Promise<JobRow>;
   /** Return expired leases to the queue, or fail them after the last attempt. */
   reapExpiredLeases(now: Date): Promise<number>;
+  /** Clear results nobody took within RESULT_RETENTION_SECONDS. */
+  clearStaleResults(now: Date): Promise<number>;
   /** `{ keyId: SPKI PEM }` for agents to verify envelopes. */
   publicKeys(): Record<string, string>;
 }
 
 const addSeconds = (d: Date, s: number) => new Date(d.getTime() + s * 1000);
+
+/**
+ * A `console` job must return a ticket that expires within
+ * CONSOLE_TICKET_MAX_SECONDS; no other job type returns anything.
+ */
+function checkResult(job: JobRow, result: Record<string, unknown> | undefined, now: Date): Record<string, unknown> | null {
+  if (job.type !== "console") {
+    if (result !== undefined) throw new HttpError(400, "invalid_result", "This job type returns no result");
+    return null;
+  }
+  const ticket = ConsoleTicket.safeParse(result);
+  if (!ticket.success) throw new HttpError(400, "invalid_result", "A console job must return a console ticket");
+  const expiresAt = Date.parse(ticket.data.expiresAt);
+  if (expiresAt <= now.getTime() || expiresAt > now.getTime() + CONSOLE_TICKET_MAX_SECONDS * 1000) {
+    throw new HttpError(400, "invalid_result", "The console ticket must expire within 5 minutes");
+  }
+  return ticket.data;
+}
 
 export function createJobs(deps: JobsDeps): Jobs {
   const pem = publicKeyPem(deps.signing.privateKey);
@@ -102,9 +159,10 @@ export function createJobs(deps: JobsDeps): Jobs {
         payload: input.payload as unknown as Record<string, unknown>,
         state: "queued",
         attempt: 0,
-        maxAttempts: deps.maxAttempts,
+        maxAttempts: input.maxAttempts ?? deps.maxAttempts,
         leaseExpiresAt: null,
         lastError: null,
+        result: null,
         createdAt: input.now,
         updatedAt: input.now,
       };
@@ -112,11 +170,11 @@ export function createJobs(deps: JobsDeps): Jobs {
       return job;
     },
 
-    async claim(hostId, now) {
+    async claim(hostId, now, options = {}) {
       if (deps.beforeClaim) await deps.beforeClaim(now);
       return deps.store.transaction(async (tx) => {
         await reap(tx, now);
-        const job = await tx.leaseNextJob(hostId, now, addSeconds(now, deps.leaseSeconds));
+        const job = await tx.leaseNextJob(hostId, now, addSeconds(now, deps.leaseSeconds), options.types);
         if (!job) return null;
         return signJob(
           {
@@ -153,10 +211,11 @@ export function createJobs(deps: JobsDeps): Jobs {
       return result;
     },
 
-    async complete(hostId, jobId, attempt, now) {
+    async complete(hostId, jobId, attempt, result, now) {
       return deps.store.transaction(async (tx) => {
         const job = await heldJob(tx, hostId, jobId, attempt);
-        const done: JobRow = { ...job, state: "succeeded", leaseExpiresAt: null, updatedAt: now };
+        const stored = checkResult(job, result, now);
+        const done: JobRow = { ...job, state: "succeeded", leaseExpiresAt: null, result: stored, updatedAt: now };
         await tx.updateJob(done);
         await deps.outcomes.succeeded(tx, done, now);
         return done;
@@ -170,8 +229,33 @@ export function createJobs(deps: JobsDeps): Jobs {
       });
     },
 
+    async takeResult(jobId, now) {
+      return deps.store.transaction(async (tx): Promise<JobProgress> => {
+        const job = await tx.getJob(jobId);
+        if (!job || job.state === "failed") return { state: "failed" };
+        if (job.state !== "succeeded") return { state: "pending" };
+        if (job.result !== null) await tx.updateJob({ ...job, result: null, updatedAt: now });
+        return { state: "succeeded", result: job.result };
+      });
+    },
+
+    async cancel(jobId, reason, now) {
+      return deps.store.transaction(async (tx) => {
+        const job = await tx.getJob(jobId);
+        if (!job || job.state === "succeeded" || job.state === "failed") return false;
+        await tx.updateJob({ ...job, state: "failed", leaseExpiresAt: null, lastError: reason, updatedAt: now });
+        return true;
+      });
+    },
+
     async reapExpiredLeases(now) {
       return deps.store.transaction((tx) => reap(tx, now));
+    },
+
+    async clearStaleResults(now) {
+      return deps.store.transaction((tx) =>
+        tx.clearJobResults(new Date(now.getTime() - RESULT_RETENTION_SECONDS * 1000)),
+      );
     },
 
     publicKeys() {

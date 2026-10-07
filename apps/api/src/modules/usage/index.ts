@@ -1,11 +1,13 @@
 /**
  * Usage: the host agent reports samples; the API stores them and adds them
- * into per-project, per-UTC-hour records of vCPU-hours, memory GB-hours and
+ * into per-service-instance, per-UTC-hour records of vCPU-hours, memory GB-hours and
  * disk GB-hours. No prices (decision D7); Cloud prices from the ledger.
  *
  * Metering rule: vCPU and memory count while the instance is running; disk
  * counts while it exists. Sizes come from the API's own record of the
- * instance, never from the agent. A sample repeated with the same
+ * instance, never from the agent: the size in force at the sample's
+ * `sampledAt` (from the instance's size history), so a late sample from
+ * before a resize is metered at the old size. A sample repeated with the same
  * (instanceId, sampledAt) is ignored, so retries never double count.
  * A sample that spans an hour boundary is split between the two hours.
  */
@@ -14,7 +16,7 @@ import type { AgentUsageSample, UsageRecord } from "@softqraft/compute-contracts
 import { HttpError } from "../../lib/errors.js";
 import type { ComputeStore, HostRow, UsageRecordRow } from "../../store/index.js";
 
-export { registerAgentUsageRoutes, registerUsageRoutes } from "./routes.js";
+export { registerAgentUsageRoutes, registerCloudUsageRoutes, registerConsoleUsageRoutes } from "./routes.js";
 
 const HOUR_MS = 3_600_000;
 /** Samples may be at most this far in the future (clock drift). */
@@ -31,7 +33,7 @@ export interface IngestResult {
 
 export interface Usage {
   ingest(host: HostRow, samples: AgentUsageSample[], now: Date): Promise<IngestResult>;
-  records(projectId: string, from: Date, to: Date): Promise<UsageRecord[]>;
+  records(serviceInstanceId: string, from: Date, to: Date): Promise<UsageRecord[]>;
 }
 
 /** Split [end − seconds, end] into whole-second slices per UTC hour. */
@@ -52,7 +54,7 @@ export function splitByHour(end: Date, seconds: number): Array<{ hourStart: Date
 
 export function toUsageRecord(row: UsageRecordRow): UsageRecord {
   return {
-    projectId: row.projectId,
+    serviceInstanceId: row.serviceInstanceId,
     hourStart: row.hourStart.toISOString(),
     vcpuHours: row.vcpuSeconds / 3600,
     memoryGbHours: row.memoryMbSeconds / 1024 / 3600,
@@ -77,16 +79,17 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
           if (!instance || instance.hostId !== host.id) {
             throw new HttpError(400, "unknown_instance", "A sample names an instance this host does not run");
           }
+          const size = (await tx.instanceSizeAt(instance.id, sampledAt)) ?? instance.spec;
           const inserted = await tx.insertUsageSample({
             instanceId: instance.id,
             hostId: host.id,
-            projectId: instance.projectId,
+            serviceInstanceId: instance.serviceInstanceId,
             sampledAt,
             intervalSeconds: sample.intervalSeconds,
             powerState: sample.powerState,
-            vcpu: instance.spec.vcpu,
-            memoryMb: instance.spec.memoryMb,
-            diskGb: instance.spec.diskGb,
+            vcpu: size.vcpu,
+            memoryMb: size.memoryMb,
+            diskGb: size.diskGb,
           });
           if (!inserted) {
             duplicates += 1;
@@ -96,11 +99,11 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
           const running = sample.powerState === "running";
           for (const slice of splitByHour(sampledAt, sample.intervalSeconds)) {
             await tx.addUsage({
-              projectId: instance.projectId,
+              serviceInstanceId: instance.serviceInstanceId,
               hourStart: slice.hourStart,
-              vcpuSeconds: running ? Math.round(instance.spec.vcpu * slice.seconds) : 0,
-              memoryMbSeconds: running ? Math.round(instance.spec.memoryMb * slice.seconds) : 0,
-              diskGbSeconds: Math.round(instance.spec.diskGb * slice.seconds),
+              vcpuSeconds: running ? Math.round(size.vcpu * slice.seconds) : 0,
+              memoryMbSeconds: running ? Math.round(size.memoryMb * slice.seconds) : 0,
+              diskGbSeconds: Math.round(size.diskGb * slice.seconds),
             });
           }
         }
@@ -108,9 +111,9 @@ export function createUsage(deps: { store: ComputeStore }): Usage {
       });
     },
 
-    async records(projectId, from, to) {
+    async records(serviceInstanceId, from, to) {
       return deps.store.transaction(async (tx) =>
-        (await tx.listUsageRecords(projectId, from, to)).map(toUsageRecord),
+        (await tx.listUsageRecords(serviceInstanceId, from, to)).map(toUsageRecord),
       );
     },
   };
