@@ -58,7 +58,9 @@ export function registerConsoleInstanceRoutes(
 
   app.get("/console/v1/instances", async (req) => ({ instances: await instances.list(scope(req)) }));
 
-  app.get("/console/v1/instances/:id", async (req) => instances.detail(scope(req), uuidParam(req, "id", "instance")));
+  app.get("/console/v1/instances/:id", async (req) => ({
+    instance: await instances.get(scope(req), uuidParam(req, "id", "instance")),
+  }));
 
   app.get("/console/v1/instances/:id/usage", async (req) => ({
     usage: await instances.usageOf(scope(req), uuidParam(req, "id", "instance")),

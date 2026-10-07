@@ -290,25 +290,25 @@ describe("instance detail: console capability and usage", () => {
       await agent.claim();
       const inst = instanceOf(await yes.createInstance({ name: "with-console" }));
       const pending = await yes.console("GET", `/console/v1/instances/${inst.id}`);
-      assert.deepEqual(pending.json().capabilities, { console: true });
+      assert.equal(pending.json().instance.capabilities.console, true);
       await agent.drain();
-      assert.deepEqual((await yes.console("GET", `/console/v1/instances/${inst.id}`)).json().capabilities, { console: true });
+      assert.equal((await yes.console("GET", `/console/v1/instances/${inst.id}`)).json().instance.capabilities.console, true);
     } finally {
       await yes.close();
     }
 
-    const no = await harness({ consoleDrivers: new Set() });
+    const no = await harness();
     try {
-      const agent = await no.enrolAgent();
+      const agent = await no.enrolAgent("sq-node-01", { vcpu: 4, memoryMb: 8192, diskGb: 120 }, "proxmox");
       await agent.claim();
       const inst = instanceOf(await no.createInstance({ name: "no-console" }));
       await agent.drain();
       const detail = await no.console("GET", `/console/v1/instances/${inst.id}`);
       assert.equal(detail.json().instance.state, "running");
-      assert.deepEqual(detail.json().capabilities, { console: false });
+      assert.equal(detail.json().instance.capabilities.console, false);
       const open = await no.console("POST", `/console/v1/instances/${inst.id}/console`);
       assert.equal(open.statusCode, 409);
-      assert.equal(open.json().error.code, "console_unsupported");
+      assert.equal(open.json().error.code, "not_supported");
       assert.equal(await agent.claim(), null, "no console job was queued");
     } finally {
       await no.close();

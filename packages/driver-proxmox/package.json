@@ -1,0 +1,40 @@
+{
+  "name": "@softqraft/compute-driver-proxmox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Proxmox VE 8 HTTP API client and HypervisorDriver for the Compute host agent.",
+  "license": "UNLICENSED",
+  "author": "SoftQraft Labs Ltd.",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@softqraft/compute-contracts": "workspace:*",
+    "@softqraft/compute-driver": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@softqraft/compute-proxmox-fake": "workspace:*",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.4",
+    "typescript": "^5.9.3"
+  }
+}

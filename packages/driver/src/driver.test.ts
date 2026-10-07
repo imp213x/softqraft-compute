@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DRIVER_ERRORS, DriverError, DriverRegistry, FakeDriver, defaultDriverRegistry } from "./index.js";
+import {
+  DRIVER_ERRORS,
+  DriverError,
+  DriverRegistry,
+  FAKE_DRIVER_CAPABILITIES,
+  FakeDriver,
+  PROXMOX_DRIVER_CAPABILITIES,
+  defaultDriverRegistry,
+} from "./index.js";
 
 const spec = { name: "web", imageId: "debian-12", vcpu: 2, memoryMb: 2048, diskGb: 20, sshPublicKeys: [] };
 const input = (id: string) => ({
@@ -20,6 +28,7 @@ describe("FakeDriver", () => {
     await d.snapshot("a", "snap-1");
     await d.start("a");
     assert.deepEqual(await d.status("a"), { instanceId: "a", power: "running", snapshots: ["snap-1"] });
+    assert.deepEqual(await d.list(), [{ instanceId: "a", power: "running" }]);
     await d.delete("a");
     assert.equal((await d.status("a")).power, "absent");
   });
@@ -108,18 +117,29 @@ describe("FakeDriver", () => {
 });
 
 describe("DriverRegistry", () => {
-  it("ships only the fake driver until C1e", () => {
+  it("builds the fake driver and declares proxmox without building it", () => {
     const r = defaultDriverRegistry();
-    assert.deepEqual(r.names(), ["fake"]);
+    assert.deepEqual(r.names(), ["fake", "proxmox"]);
     assert.equal(r.create("fake").name, "fake");
-    assert.equal(r.has("proxmox"), false);
-    assert.throws(() => r.create("proxmox"), /Unknown driver/);
+    assert.equal(r.has("proxmox"), true);
+    assert.throws(() => r.create("proxmox"), /declared but cannot be built/);
+    assert.throws(() => r.create("xen"), /Unknown driver/);
+  });
+
+  it("reports capabilities per driver", () => {
+    const r = defaultDriverRegistry();
+    assert.deepEqual(r.capabilities("fake"), { console: true, resize: true, snapshot: true });
+    assert.deepEqual(r.capabilities("proxmox"), { console: false, resize: true, snapshot: true });
+    assert.equal(r.capabilities("xen"), null);
+    assert.deepEqual(new FakeDriver().capabilities, FAKE_DRIVER_CAPABILITIES);
+    assert.deepEqual(PROXMOX_DRIVER_CAPABILITIES.console, false);
   });
 
   it("rejects duplicate and invalid names", () => {
     const r = new DriverRegistry();
-    r.register("fake", () => new FakeDriver());
-    assert.throws(() => r.register("fake", () => new FakeDriver()), /already registered/);
-    assert.throws(() => r.register("Bad Name", () => new FakeDriver()), /Driver names/);
+    r.register("fake", () => new FakeDriver(), FAKE_DRIVER_CAPABILITIES);
+    assert.throws(() => r.register("fake", () => new FakeDriver(), FAKE_DRIVER_CAPABILITIES), /already registered/);
+    assert.throws(() => r.declare("fake", FAKE_DRIVER_CAPABILITIES), /already registered/);
+    assert.throws(() => r.register("Bad Name", () => new FakeDriver(), FAKE_DRIVER_CAPABILITIES), /Driver names/);
   });
 });

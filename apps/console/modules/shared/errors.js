@@ -44,7 +44,6 @@ export const ERROR_COPY = Object.freeze({
   instance_not_found: "This VM no longer exists. Go back to your VMs.",
   snapshot_not_found: "This snapshot no longer exists. Refresh the page.",
   not_supported: "This server does not offer that for this VM yet. Connect with SSH, or choose another action.",
-  console_unsupported: "The browser console is not available for this VM. Connect with SSH instead.",
   console_unavailable: "The console could not be opened. Connect with SSH, or try again.",
   console_timeout: "The server did not answer in time. Connect with SSH, or try again.",
 

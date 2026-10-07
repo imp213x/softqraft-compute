@@ -6,15 +6,24 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 
 ### Added
 
+- C1e: the host agent and the Proxmox driver:
+  - `@softqraft/compute-host-agent` (`apps/host-agent`, Node 24): configuration from `/etc/softqraft/compute-agent.env` validated with zod; an Ed25519 host key (0600) and the enrolment record in `/var/lib/softqraft-compute-agent` (0700); first-run enrolment with the one-time token, then the token is blanked in the env file or the operator is told to remove it; a loop that claims, verifies (`verifyJob`), runs and reports jobs, heartbeating inside the 120 s lease, with exponential backoff while the API is unreachable; usage samples every 60 s; structured logs without secrets; graceful SIGTERM.
+  - Dry run (`COMPUTE_AGENT_DRY_RUN=true`): jobs are verified, Proxmox writes are logged without secrets and never sent, and each job is failed with `dry_run`.
+  - Network guard: the agent runs no job unless the host's FORWARD rules block outbound SMTP and forwarding to production (`network_guard_missing`).
+  - `@softqraft/compute-driver-proxmox`: a Proxmox VE 8 HTTP API client with `PVEAPIToken` authentication and TLS pinned to `PROXMOX_TLS_FINGERPRINT`; fences checked before every call (VMIDs 2000-2999 and templates 9000-9099, the pool, the storage, the bridge `vmbr10`, the node, an endpoint and parameter list); `ProxmoxDriver` with create (full clone, cores and memory, `net0` with the firewall, cloud-init, IP and MAC filtering with the `ipfilter-net0` ipset, disk resize, start), start, graceful stop, delete with purge, resize, snapshots, status and list, all idempotent; stable, secret-free error codes; `ensureImages` for Debian 12 and Ubuntu 24.04 templates from vendor cloud images verified against the vendor's checksum lists.
+  - `deploy/host-agent`: a hardened systemd unit, `install.sh` (non-destructive) and `compute-agent.env.example`.
+  - `@softqraft/compute-proxmox-fake`: a test-only fake Proxmox API that checks the token and records every call.
+  - `HypervisorDriver.capabilities` (`console`, `resize`, `snapshot`) and `list()`. Instances carry their host driver's `capabilities`; the API refuses a resize, snapshot or console the driver cannot do with **409 `not_supported`**.
+  - The API knows the `proxmox` driver (enrolment accepts it). Its capabilities in C1: no console (it needs a relay that comes later), resize and snapshots.
 - C1d: the Compute console and the staff fleet pages:
   - `apps/console`: static, framework-free ES modules served by the API at `/console/` and `/admin/`, with no build step, `no-store` caching and a strict CSP (no inline script or style, connections to this origin only).
   - Customer console: an empty state with one "Create your first VM" button; a one-screen create with a suggested name, Small, Medium and Large presets, Ubuntu 24.04 preselected (Debian 12 offered) and the remembered SSH key; the VM list and detail with status in words, a copy-ready `ssh` command, usage hours, snapshots and one actions menu (Start or Stop, Resize only while stopped, Snapshot, Delete); delete by typing the VM name, and an inline "Sign in again to delete" when the sign-in is older than 15 minutes. Lists poll every 5 s only while something is changing. The console button shows only when the host offers a console.
   - Staff fleet: hosts with state in words, capacity used and free and last seen; Drain, "Stop all VMs on this host" (with a confirmation) and Enable, disabled for viewers with the reason; "Add a host" shows a one-time enrolment token with a copy button, its 30-minute expiry and a link to the runbook steps; a read-only table of all instances. Stale operator writes get "Sign in again", through Ops.
   - Every API error code maps to one plain sentence with the next step. No codes, ids or stack traces on screen.
-  - The detail page reads `capabilities` defensively (on the instance, as C1e adds it, or beside it): the console button shows only when `console` is true, and Resize and Snapshot are hidden when `resize` or `snapshot` is false. `not_supported` has its own plain sentence.
+  - The detail page reads the instance's `capabilities`: the console button shows only when `console` is true, and Resize and Snapshot are hidden when `resize` or `snapshot` is false. `not_supported` has its own plain sentence.
   - `GET /console/v1/sizes`: the presets, built from the pilot caps.
   - `GET`, `POST` and `DELETE /console/v1/ssh-keys`: saved public keys per service instance, ed25519 or RSA of at least 3072 bits, checked from the key blob (migration `004_ssh_keys`).
-  - `GET /console/v1/instances/:id` adds `capabilities.console`; `GET /console/v1/instances/:id/usage` returns the instance's usage hours.
+  - `GET /console/v1/instances/:id/usage` returns the instance's usage hours.
   - `GET /console/v1/auth/status` and `GET /admin/v1/auth/status` name the "Sign in again" destination from `CLOUD_ORIGIN`.
   - Configuration: `CLOUD_ORIGIN` (required, https, in production with federation on) and `COMPUTE_HOST_RUNBOOK_URL`.
   - The parent brand is pinned by SHA-256 (`scripts/sync-parent-brand.mjs`, `apps/console/brand-manifest.json`); `check:console` (brand pins and `scripts/check-console-ui.test.mjs`) runs in `test:ci`.
@@ -52,7 +61,7 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 
 - **The 15-minute rule for Console deletes.** `DELETE` of an instance or a snapshot needs a Console sign-in from the last 15 minutes; otherwise **403 `reauth_required`**, recorded as `auth.console_reauth_required`. A new Cloud launch resets it.
 - The browser CSP is stricter: `default-src 'none'`, no `'unsafe-inline'` styles and no `data:` images.
-- `POST /console/v1/instances/:id/console` returns **409 `console_unsupported`** when the instance's host driver offers no console.
+- `POST /console/v1/instances/:id/console` returns **409 `not_supported`** when the instance's host driver offers no console.
 
 - Instances, usage and quotas belong to a Cloud service instance (`serviceInstanceId`) instead of a raw Cloud project id. `COMPUTE_ALLOWED_PROJECTS` still lists Cloud project ids and is checked through the service instance.
 - `diskGb` is optional on create and defaults to 16 GB.

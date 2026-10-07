@@ -12,6 +12,7 @@
 - Node 24 or newer (`engines` in `package.json`).
 - pnpm 9.15 (`packageManager` in `package.json`, installed by `corepack enable`).
 - Postgres 16 for the Postgres tests.
+- `openssl` on the PATH: the Proxmox tests generate a throwaway TLS certificate at run time.
 
 ## Checks that must pass
 
@@ -20,12 +21,13 @@ pnpm install --frozen-lockfile
 DATABASE_URL=postgres://… pnpm run test:ci
 ```
 
-`test:ci` builds, typechecks, runs the unit tests, the cloud-federation-v1 §9 conformance runner (`test:conformance`) and the Postgres tests, then `check:boundaries`, `check:federation-vendor` and `check:console` (the parent brand pins and the Console UI contract). CI runs the same in `.github/workflows/ci.yml`. A test is never skipped, disabled or weakened to get green; if something cannot run, say so in the pull request.
+`test:ci` builds, typechecks, runs the unit tests (the host agent's end-to-end test starts the built API, so run `pnpm run build` before `pnpm run test`), the cloud-federation-v1 §9 conformance runner (`test:conformance`) and the Postgres tests, then `check:boundaries`, `check:federation-vendor` and `check:console` (the parent brand pins and the Console UI contract). CI runs the same in `.github/workflows/ci.yml`. A test is never skipped, disabled or weakened to get green; if something cannot run, say so in the pull request.
 
 ## Code rules
 
 - Modules in `apps/api/src/modules/<module>/` talk to each other only through `index.ts`. Dependencies are injected; stores and drivers come from registries.
 - Packages never import from `apps/`.
+- No test, script or tool contacts a real Proxmox, Hetzner or host. Proxmox tests use `@softqraft/compute-proxmox-fake`, and vendor checksum lists are injected.
 - Migrations are numbered and additive. Never edit one that has been applied; add a new file.
 - API changes update `docs/api.md` and, for shapes, `packages/contracts`.
 

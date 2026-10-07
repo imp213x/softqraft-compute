@@ -25,7 +25,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   ConsoleTicket,
+  NO_CAPABILITIES,
   SnapshotJobPayload,
+  type DriverCapabilities,
   type CreateInstanceRequest,
   type CreateJobPayload,
   type Instance,
@@ -66,15 +68,10 @@ export interface InstancesDeps {
   consoleWaitMs: number;
   /** Real-time pause between console polls (tests may shorten it). */
   sleep?: (ms: number) => Promise<void>;
-  /** True when a host driver can hand out browser console tickets. */
-  driverHasConsole: (driver: string) => boolean;
   /** Resolved lazily: jobs and instances depend on each other through hooks. */
   jobs: () => Jobs;
-}
-
-export interface InstanceCapabilities {
-  /** A browser console can be opened: the instance runs on a host whose driver offers one. */
-  console: boolean;
+  /** What a driver supports, by driver name (null for an unknown driver). */
+  driverCapabilities: (driver: string) => Readonly<DriverCapabilities> | null;
 }
 
 export interface InstanceUsage {
@@ -101,7 +98,6 @@ export interface Instances {
   listAll(options?: { includeDeleted?: boolean }): Promise<Instance[]>;
   get(serviceInstanceId: string, id: string): Promise<Instance>;
   /** An instance and what its host can do for it (the Console detail screen). */
-  detail(serviceInstanceId: string, id: string): Promise<{ instance: Instance; capabilities: InstanceCapabilities }>;
   /** What one instance has used over its life, in hours. Metered, not priced. */
   usageOf(serviceInstanceId: string, id: string): Promise<InstanceUsage>;
   act(serviceInstanceId: string, id: string, action: InstanceAction, now: Date): Promise<Instance>;
@@ -119,7 +115,7 @@ export interface Instances {
   readonly jobOutcomes: JobOutcomeHandler;
 }
 
-export function toInstance(row: InstanceRow): Instance {
+export function toInstance(row: InstanceRow, capabilities: Readonly<DriverCapabilities> = NO_CAPABILITIES): Instance {
   return {
     id: row.id,
     serviceInstanceId: row.serviceInstanceId,
@@ -129,6 +125,7 @@ export function toInstance(row: InstanceRow): Instance {
     pendingReason: row.pendingReason,
     hostId: row.hostId,
     privateIp: row.privateIp,
+    capabilities: { ...capabilities },
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -146,11 +143,11 @@ export function toSnapshot(row: SnapshotRow): Snapshot {
   };
 }
 
-const CONSOLE_UNSUPPORTED = () =>
-  new HttpError(409, "console_unsupported", "This instance's host does not offer a browser console");
 const NOT_FOUND = () => new HttpError(404, "instance_not_found", "Instance not found");
 const SNAPSHOT_NOT_FOUND = () => new HttpError(404, "snapshot_not_found", "Snapshot not found");
 const HOST_DISABLED = () => new HttpError(409, "host_disabled", "The host running this instance is disabled");
+const NOT_SUPPORTED = (what: string) =>
+  new HttpError(409, "not_supported", `This instance's host cannot ${what} yet`);
 const POLL_MS = 100;
 
 function conflict(from: InstanceState, action: string): HttpError {
@@ -202,6 +199,39 @@ export function createInstances(deps: InstancesDeps): Instances {
   }
 
   /** Locks the host row (lock order: pool, host, instance) and refuses a disabled host. */
+  /** The capabilities of the driver on the instance's host; none while it has no host. */
+  async function capabilitiesOf(tx: StoreTx, row: InstanceRow): Promise<Readonly<DriverCapabilities>> {
+    if (!row.hostId) return NO_CAPABILITIES;
+    const host = await tx.getHost(row.hostId);
+    return (host && deps.driverCapabilities(host.driver)) ?? NO_CAPABILITIES;
+  }
+
+  async function present(tx: StoreTx, row: InstanceRow): Promise<Instance> {
+    return toInstance(row, await capabilitiesOf(tx, row));
+  }
+
+  async function presentAll(tx: StoreTx, rows: InstanceRow[]): Promise<Instance[]> {
+    const byHost = new Map<string, Readonly<DriverCapabilities>>();
+    const out: Instance[] = [];
+    for (const row of rows) {
+      if (!row.hostId) {
+        out.push(toInstance(row));
+        continue;
+      }
+      let caps = byHost.get(row.hostId);
+      if (!caps) {
+        caps = await capabilitiesOf(tx, row);
+        byHost.set(row.hostId, caps);
+      }
+      out.push(toInstance(row, caps));
+    }
+    return out;
+  }
+
+  async function requireCapability(tx: StoreTx, row: InstanceRow, what: keyof DriverCapabilities, verb: string) {
+    if (!(await capabilitiesOf(tx, row))[what]) throw NOT_SUPPORTED(verb);
+  }
+
   async function requireHostEnabled(tx: StoreTx, row: InstanceRow): Promise<void> {
     if (!row.hostId) return;
     const host = await tx.lockHost(row.hostId);
@@ -321,6 +351,7 @@ export function createInstances(deps: InstancesDeps): Instances {
   ): Promise<InstanceRow> {
     if (row.state !== "stopped") throw conflict(row.state, "resize");
     await requireHostEnabled(tx, row);
+    await requireCapability(tx, row, "resize", "resize instances");
     const size = {
       vcpu: action.vcpu ?? row.spec.vcpu,
       memoryMb: action.memoryMb ?? row.spec.memoryMb,
@@ -389,7 +420,7 @@ export function createInstances(deps: InstancesDeps): Instances {
           }
           const existing = await tx.getInstance(previous.instanceId);
           if (!existing) throw NOT_FOUND();
-          return { instance: toInstance(existing), replayed: true };
+          return { instance: await present(tx, existing), replayed: true };
         }
 
         if (!reservation.ok) throw quotaExceeded(reservation.dimension);
@@ -424,28 +455,20 @@ export function createInstances(deps: InstancesDeps): Instances {
         await tx.updateInstance(row, "pending");
         await tx.putIdempotency({ serviceInstanceId, key: idempotencyKey, requestHash: hash, instanceId: row.id }, now);
         const placed = await tryPlace(tx, row, now);
-        return { instance: toInstance(placed), replayed: false };
+        return { instance: await present(tx, placed), replayed: false };
       });
     },
 
     async list(serviceInstanceId) {
-      return store.transaction(async (tx) => (await tx.listInstances(serviceInstanceId)).map(toInstance));
+      return store.transaction(async (tx) => presentAll(tx, await tx.listInstances(serviceInstanceId)));
     },
 
     async listAll(options = {}) {
-      return store.transaction(async (tx) => (await tx.listAllInstances(options)).map(toInstance));
+      return store.transaction(async (tx) => presentAll(tx, await tx.listAllInstances(options)));
     },
 
     async get(serviceInstanceId, id) {
-      return store.transaction(async (tx) => toInstance(await owned(tx, serviceInstanceId, id)));
-    },
-
-    async detail(serviceInstanceId, id) {
-      return store.transaction(async (tx) => {
-        const row = await owned(tx, serviceInstanceId, id);
-        const host = row.hostId ? await tx.getHost(row.hostId) : null;
-        return { instance: toInstance(row), capabilities: { console: host !== null && deps.driverHasConsole(host.driver) } };
-      });
+      return store.transaction(async (tx) => present(tx, await owned(tx, serviceInstanceId, id)));
     },
 
     async usageOf(serviceInstanceId, id) {
@@ -467,14 +490,14 @@ export function createInstances(deps: InstancesDeps): Instances {
         // (lock order: pool, host, instance).
         if (action.action === "resize") await tx.lockPool();
         const row = await owned(tx, serviceInstanceId, id);
-        if (action.action === "resize") return toInstance(await resize(tx, row, action, now));
+        if (action.action === "resize") return present(tx, await resize(tx, row, action, now));
         const [from, to] =
           action.action === "start" ? (["stopped", "starting"] as const) : (["running", "stopping"] as const);
         if (row.state !== from) throw conflict(row.state, action.action);
         if (action.action === "start") await requireHostEnabled(tx, row);
         const next = await move(tx, row, to, now);
         await lifecycleJob(tx, next, action.action, now);
-        return toInstance(next);
+        return present(tx, next);
       });
     },
 
@@ -488,10 +511,10 @@ export function createInstances(deps: InstancesDeps): Instances {
           const deleted = await move(tx, deleting, "deleted", now);
           await ipam.release(tx, row.id, now);
           await tx.markSnapshotsDeleted(row.id, now);
-          return toInstance(deleted);
+          return present(tx, deleted);
         }
         await lifecycleJob(tx, deleting, "delete", now);
-        return toInstance(deleting);
+        return present(tx, deleting);
       });
     },
 
@@ -505,6 +528,7 @@ export function createInstances(deps: InstancesDeps): Instances {
         const row = await owned(tx, serviceInstanceId, id);
         if ((row.state !== "running" && row.state !== "stopped") || !row.hostId) throw conflict(row.state, "snapshot");
         await requireHostEnabled(tx, row);
+        await requireCapability(tx, row, "snapshot", "take snapshots");
         const reservation = await quotas.reserveDelta(tx, { instances: 0, vcpu: 0, memoryMb: 0, diskGb: row.spec.diskGb });
         if (!reservation.ok) throw quotaExceeded(reservation.dimension);
         const host = await tx.getHost(row.hostId);
@@ -576,9 +600,8 @@ export function createInstances(deps: InstancesDeps): Instances {
       const job = await store.transaction(async (tx) => {
         const row = await owned(tx, serviceInstanceId, id);
         if (row.state !== "running" || !row.hostId) throw conflict(row.state, "open a console on");
-        const host = await tx.getHost(row.hostId);
-        if (!host || !deps.driverHasConsole(host.driver)) throw CONSOLE_UNSUPPORTED();
         await requireHostEnabled(tx, row);
+        await requireCapability(tx, row, "console", "open a console");
         return lifecycleJob(tx, row, "console", clock());
       });
       const jobs = deps.jobs();

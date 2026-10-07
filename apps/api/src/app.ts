@@ -70,13 +70,6 @@ import {
 } from "./modules/usage/index.js";
 import type { ComputeStore } from "./store/index.js";
 
-/**
- * Drivers whose host agent can hand out a browser console ticket. The C1
- * Proxmox driver (C1e) does not, so the Console hides its console button
- * for instances on those hosts.
- */
-export const CONSOLE_CAPABLE_DRIVERS: ReadonlySet<string> = new Set(["fake"]);
-
 export interface AppDeps {
   config: ComputeConfig;
   store: ComputeStore;
@@ -86,8 +79,6 @@ export interface AppDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Where logs go (tests capture them). Defaults to stdout. */
   logStream?: { write(line: string): void };
-  /** Drivers that offer a browser console. Defaults to CONSOLE_CAPABLE_DRIVERS. */
-  consoleDrivers?: ReadonlySet<string>;
 }
 
 export interface Services {
@@ -126,7 +117,7 @@ export function buildServices(deps: AppDeps): Services {
     defaultDiskGb: config.defaultDiskGb,
     consoleWaitMs: config.consoleWaitSeconds * 1000,
     sleep: deps.sleep,
-    driverHasConsole: (driver) => (deps.consoleDrivers ?? CONSOLE_CAPABLE_DRIVERS).has(driver),
+    driverCapabilities: (name) => drivers.capabilities(name),
     jobs: () => {
       if (!jobs) throw new Error("jobs module is not ready");
       return jobs;

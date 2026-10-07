@@ -27,6 +27,20 @@ export const ALLOWED_WORKSPACE_DEPENDENCIES = Object.freeze({
   "@softqraft/compute-contracts": [],
   "@softqraft/compute-jobs": ["@softqraft/compute-contracts"],
   "@softqraft/compute-driver": ["@softqraft/compute-contracts"],
+  "@softqraft/compute-driver-proxmox": [
+    "@softqraft/compute-contracts",
+    "@softqraft/compute-driver",
+    "@softqraft/compute-proxmox-fake",
+  ],
+  "@softqraft/compute-proxmox-fake": [],
+  "@softqraft/compute-host-agent": [
+    "@softqraft/compute-contracts",
+    "@softqraft/compute-jobs",
+    "@softqraft/compute-driver",
+    "@softqraft/compute-driver-proxmox",
+    "@softqraft/compute-proxmox-fake",
+    "@softqraft/federation",
+  ],
   "@softqraft/federation": [],
   "@softqraft/compute-api": [
     "@softqraft/compute-contracts",

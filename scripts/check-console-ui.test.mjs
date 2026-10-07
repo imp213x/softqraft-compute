@@ -326,10 +326,10 @@ test("the actions menu: resize only while stopped, one power action", () => {
 
 test("capabilities are read defensively: no console unless offered, resize and snapshot unless refused", () => {
   assert.deepEqual(capabilitiesOf({ state: "running" }), { console: false, resize: true, snapshot: true });
-  assert.deepEqual(capabilitiesOf({ state: "running" }, { console: true }), { console: true, resize: true, snapshot: true });
-  // C1e: capabilities on the instance itself win.
+  assert.deepEqual(capabilitiesOf({ state: "running", capabilities: { console: true } }), { console: true, resize: true, snapshot: true });
+  // A driver without resize or snapshot hides both.
   const proxmox = { state: "stopped", capabilities: { console: false, resize: false, snapshot: false } };
-  assert.deepEqual(capabilitiesOf(proxmox, { console: true }), { console: false, resize: false, snapshot: false });
+  assert.deepEqual(capabilitiesOf(proxmox), { console: false, resize: false, snapshot: false });
   const m = menuState(proxmox, capabilitiesOf(proxmox));
   assert.equal(m.resizeShown, false);
   assert.equal(m.snapshotShown, false);

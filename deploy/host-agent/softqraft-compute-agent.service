@@ -1,0 +1,56 @@
+# SoftQraft Compute host agent. Installed by deploy/host-agent/install.sh.
+# The founder enables it during C1f: systemctl enable --now softqraft-compute-agent
+[Unit]
+Description=SoftQraft Compute host agent
+Documentation=https://github.com/imp213x/softqraft-compute/blob/main/docs/host-agent.md
+Wants=network-online.target
+After=network-online.target pveproxy.service
+
+[Service]
+Type=simple
+User=softqraft-compute
+Group=softqraft-compute
+Environment=NODE_ENV=production
+Environment=COMPUTE_AGENT_ENV_FILE=/etc/softqraft/compute-agent.env
+# Read by systemd as root, so the file may stay root-only (mode 0600).
+EnvironmentFile=/etc/softqraft/compute-agent.env
+RuntimeDirectory=softqraft-compute-agent
+RuntimeDirectoryMode=0755
+# Privileged ("+"), read-only snapshot of the FORWARD rules for the network
+# guard check; the agent itself cannot read iptables. A failure ("-") only
+# means the agent sees no guard and runs no job.
+ExecStartPre=-+/bin/sh -c '/usr/sbin/iptables -S FORWARD > /run/softqraft-compute-agent/iptables-forward.rules && chmod 0644 /run/softqraft-compute-agent/iptables-forward.rules'
+ExecStart=/usr/bin/node /opt/softqraft-compute-agent/current/dist/main.js
+Restart=on-failure
+RestartSec=10
+# 78 = configuration error: fix the env file, do not restart-loop.
+RestartPreventExitStatus=78
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/softqraft-compute-agent
+PrivateTmp=yes
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

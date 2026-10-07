@@ -1,6 +1,6 @@
 # Compute API reference
 
-Version `0.1.0` (C1d). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
+Version `0.1.0` (C1d and C1e). All bodies are JSON. Shapes are defined once, as zod schemas, in [`packages/contracts`](../packages/contracts/src).
 
 Errors always use one envelope:
 
@@ -178,8 +178,18 @@ The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, a
 ```json
 { "id": "uuid", "serviceInstanceId": "…", "spec": { … }, "pendingSize": null, "state": "provisioning",
   "pendingReason": null, "hostId": "uuid", "privateIp": "10.30.0.2",
+  "capabilities": { "console": false, "resize": true, "snapshot": true },
   "createdAt": "ISO-8601", "updatedAt": "ISO-8601" }
 ```
+
+`capabilities` says what the driver on the instance's host supports, so the console can hide the rest. All three are `false` while the instance has no host.
+
+| Driver | `console` | `resize` | `snapshot` |
+|---|---|---|---|
+| `fake` (tests) | true | true | true |
+| `proxmox` (C1) | **false**: the browser console needs a relay that comes after C1 | true | true |
+
+A resize, snapshot or console request for an instance whose driver lacks the capability is **409 `not_supported`**.
 
 `spec` is the size the instance has now. `pendingSize` is `{ "vcpu", "memoryMb", "diskGb" }` while a resize is in progress, otherwise `null`.
 
@@ -189,7 +199,7 @@ The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, a
 
 `{ "instances": Instance[] }`, oldest first, without deleted ones.
 
-`GET /console/v1/instances/:id` returns `{ "instance": Instance, "capabilities": { "console": boolean } }`, including a deleted instance. `capabilities.console` is true when the instance is placed on a host whose driver offers a browser console (the `fake` driver does; the C1 Proxmox driver does not). The Console shows its console button only then.
+`GET /console/v1/instances/:id` returns `{ "instance": Instance }`, including a deleted instance. The Console shows its console button only when `instance.capabilities.console` is true (the `fake` driver offers one; the C1 Proxmox driver does not).
 
 ### `GET /console/v1/instances/:id/usage`
 
@@ -238,10 +248,12 @@ Asks the host agent for a short-lived console ticket and waits for it, for up to
 **200** `{ "console": { "protocol": "vnc", "ticket": "…", "expiresAt": "ISO-8601" } }` with `Cache-Control: no-store`.
 
 - The ticket is handed over once and never stored afterwards.
-- The instance must be `running` (**409 `invalid_state`**), on a host whose driver offers a console (**409 `console_unsupported`**, see `capabilities.console`) and that is not disabled (**409 `host_disabled`**).
+- The instance must be `running` (**409 `invalid_state`**), on a host whose driver offers a console (**409 `not_supported`**, see `capabilities.console`) and that is not disabled (**409 `host_disabled`**).
 - **502 `console_unavailable`** when the agent fails the job.
 - **504 `console_timeout`** when it does not answer in time; the job is then cancelled and the ticket is never issued.
-- The API never holds hypervisor credentials. A browser viewer for the ticket is not built yet: no C1 driver offers a console.
+- The API never holds hypervisor credentials.
+- The Proxmox driver offers no console in C1 (`capabilities.console` is false, so the request is **409 `not_supported`**); a console relay comes later.
+- A browser viewer for the ticket is not built yet.
 
 ### `GET /console/v1/images`
 
@@ -398,7 +410,7 @@ A disabled host still authenticates, so that it can run the kill switch's stops 
 
 Errors:
 - **401 `enrolment_invalid`**;
-- **400 `unknown_driver`** (only `fake` until C1e) or **400 `invalid_public_key`**;
+- **400 `unknown_driver`** (the API knows `fake` and `proxmox`) or **400 `invalid_public_key`**;
 - **409 `host_name_taken`**.
 
 ### `POST /v1/agent/jobs/claim`

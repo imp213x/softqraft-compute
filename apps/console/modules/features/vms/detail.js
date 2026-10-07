@@ -23,13 +23,12 @@ import { confirmDelete, resizeDialog, snapshotDialog } from "./dialogs.js";
 import { POLL_MS } from "./list.js";
 
 /**
- * What the host offers for this instance. C1e puts `capabilities` on the
- * instance (`console`, `resize`, `snapshot`); this branch's detail route
- * returns `{ console }` beside it. Read both defensively: a missing field
- * means no console, and resize and snapshot allowed.
+ * What the host offers for this instance (`instance.capabilities`). A missing
+ * field means no console, and resize and snapshot allowed: the API refuses
+ * what the driver cannot do either way.
  */
-export function capabilitiesOf(instance, detailCapabilities) {
-  const caps = { ...(detailCapabilities ?? {}), ...(instance?.capabilities ?? {}) };
+export function capabilitiesOf(instance) {
+  const caps = instance?.capabilities ?? {};
   return { console: caps.console === true, resize: caps.resize !== false, snapshot: caps.snapshot !== false };
 }
 
@@ -84,7 +83,7 @@ export function renderDetail(ctx) {
       return true;
     }
     shown = true;
-    draw(detail.instance, capabilitiesOf(detail.instance, detail.capabilities), snapshots, usage);
+    draw(detail.instance, capabilitiesOf(detail.instance), snapshots, usage);
     const again = instanceStatus(detail.instance.state).changing || snapshots.some((s) => snapshotStatus(s.state).changing);
     if (again) poll.ensure();
     return again;
