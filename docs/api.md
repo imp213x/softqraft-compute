@@ -175,8 +175,18 @@ The pilot pool caps (`COMPUTE_POOL_MAX_*`) cover every live instance together, a
 ```json
 { "id": "uuid", "serviceInstanceId": "…", "spec": { … }, "pendingSize": null, "state": "provisioning",
   "pendingReason": null, "hostId": "uuid", "privateIp": "10.30.0.2",
+  "capabilities": { "console": false, "resize": true, "snapshot": true },
   "createdAt": "ISO-8601", "updatedAt": "ISO-8601" }
 ```
+
+`capabilities` says what the driver on the instance's host supports, so the console can hide the rest. All three are `false` while the instance has no host.
+
+| Driver | `console` | `resize` | `snapshot` |
+|---|---|---|---|
+| `fake` (tests) | true | true | true |
+| `proxmox` (C1) | **false**: the browser console needs a relay that comes after C1 | true | true |
+
+A resize, snapshot or console request for an instance whose driver lacks the capability is **409 `not_supported`**.
 
 `spec` is the size the instance has now. `pendingSize` is `{ "vcpu", "memoryMb", "diskGb" }` while a resize is in progress, otherwise `null`.
 
@@ -342,7 +352,7 @@ A disabled host still authenticates, so that it can run the kill switch's stops 
 
 Errors:
 - **401 `enrolment_invalid`**;
-- **400 `unknown_driver`** (only `fake` until C1e) or **400 `invalid_public_key`**;
+- **400 `unknown_driver`** (the API knows `fake` and `proxmox`) or **400 `invalid_public_key`**;
 - **409 `host_name_taken`**.
 
 ### `POST /v1/agent/jobs/claim`

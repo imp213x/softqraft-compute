@@ -1,13 +1,38 @@
 /**
  * The hypervisor driver interface. The host agent runs jobs through a
  * driver; the API never talks to a hypervisor and never holds hypervisor
- * credentials. This repository ships only the in-memory FakeDriver; the
- * Proxmox driver arrives in C1e behind this same interface.
+ * credentials. This package ships the in-memory FakeDriver; the Proxmox
+ * driver lives in `@softqraft/compute-driver-proxmox` behind this same
+ * interface.
  */
 
-import type { ConsoleTicket, InstanceSize, InstanceSpec, PowerState } from "@softqraft/compute-contracts";
+import type {
+  ConsoleTicket,
+  DriverCapabilities,
+  InstanceSize,
+  InstanceSpec,
+  PowerState,
+} from "@softqraft/compute-contracts";
 
-export type { ConsoleTicket, InstanceSize };
+export type { ConsoleTicket, DriverCapabilities, InstanceSize };
+
+/** The fake driver can do everything. */
+export const FAKE_DRIVER_CAPABILITIES: Readonly<DriverCapabilities> = Object.freeze({
+  console: true,
+  resize: true,
+  snapshot: true,
+});
+
+/**
+ * The Proxmox driver (C1). No console yet: the outbound-only design needs a
+ * console relay, which comes after C1. Declared here so the API knows the
+ * driver without loading it (the API never talks to a hypervisor).
+ */
+export const PROXMOX_DRIVER_CAPABILITIES: Readonly<DriverCapabilities> = Object.freeze({
+  console: false,
+  resize: true,
+  snapshot: true,
+});
 
 export interface CreateVmInput {
   instanceId: string;
@@ -49,6 +74,8 @@ export const DRIVER_ERRORS = Object.freeze({
   vmNotRunning: "vm_not_running",
   diskShrink: "disk_shrink",
   hostFull: "host_full",
+  /** The driver does not support this operation (see `capabilities`). */
+  unsupported: "unsupported",
 } as const);
 
 /**
@@ -58,6 +85,8 @@ export const DRIVER_ERRORS = Object.freeze({
  */
 export interface HypervisorDriver {
   readonly name: string;
+  /** What this driver supports beyond create, start, stop and delete. */
+  readonly capabilities: Readonly<DriverCapabilities>;
   create(input: CreateVmInput): Promise<void>;
   start(instanceId: string): Promise<void>;
   stop(instanceId: string): Promise<void>;

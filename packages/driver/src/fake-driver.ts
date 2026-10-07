@@ -7,6 +7,7 @@
 import type { ConsoleTicket, InstanceSize, InstanceSpec } from "@softqraft/compute-contracts";
 import {
   DRIVER_ERRORS,
+  FAKE_DRIVER_CAPABILITIES,
   DriverError,
   type CreateVmInput,
   type HypervisorDriver,
@@ -44,6 +45,7 @@ export const FAKE_CONSOLE_TICKET_SECONDS = 60;
 
 export class FakeDriver implements HypervisorDriver {
   readonly name = "fake";
+  readonly capabilities = FAKE_DRIVER_CAPABILITIES;
   private readonly vms = new Map<string, FakeVm>();
   private readonly scriptedFailures = new Map<Operation, DriverError[]>();
   /** Every call in order, for assertions. */

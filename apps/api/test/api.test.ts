@@ -847,6 +847,51 @@ describe("fleet routes", () => {
   });
 });
 
+describe("driver capabilities", () => {
+  it("reports each instance's host driver capabilities and refuses what the driver cannot do", async () => {
+    const h = await harness();
+    try {
+      const pending = instanceOf(await h.createInstance({ name: "early" }));
+      assert.equal(pending.state, "pending");
+      assert.deepEqual(pending.capabilities, { console: false, resize: false, snapshot: false });
+
+      const agent = await h.enrolAgent("sq-node-01", { vcpu: 4, memoryMb: 8192, diskGb: 120 }, "proxmox");
+      await agent.drain();
+      const listed = (await h.console("GET", "/console/v1/instances")).json().instances;
+      assert.equal(listed[0].state, "running");
+      assert.deepEqual(listed[0].capabilities, { console: false, resize: true, snapshot: true });
+      const one = await h.console("GET", `/console/v1/instances/${pending.id}`);
+      assert.deepEqual(one.json().instance.capabilities, { console: false, resize: true, snapshot: true });
+      const fleet = (await h.admin("GET", "/admin/v1/fleet/instances")).json().instances;
+      assert.deepEqual(fleet[0].capabilities, { console: false, resize: true, snapshot: true });
+
+      const console = await h.console("POST", `/console/v1/instances/${pending.id}/console`);
+      assert.equal(console.statusCode, 409);
+      assert.equal(console.json().error.code, "not_supported");
+      assert.equal(await agent.claim(), null, "no console job is queued");
+
+      const snap = await h.console("POST", `/console/v1/instances/${pending.id}/snapshots`, { name: "one" });
+      assert.equal(snap.statusCode, 202, snap.body);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it("reports full capabilities for the fake driver", async () => {
+    const h = await harness();
+    try {
+      const agent = await h.enrolAgent();
+      await agent.drain(); // the first signed request makes the host active
+      const created = instanceOf(await h.createInstance());
+      assert.equal(created.state, "provisioning");
+      assert.deepEqual(created.capabilities, { console: true, resize: true, snapshot: true });
+      await agent.drain();
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 describe("agent-signed requests", () => {
   let h: Harness;
   before(async () => {

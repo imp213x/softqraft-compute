@@ -101,7 +101,11 @@ export interface Harness {
     key?: string,
     session?: BrowserSession,
   ): Promise<LightMyRequestResponse>;
-  enrolAgent(name?: string, capacity?: { vcpu: number; memoryMb: number; diskGb: number }): Promise<FakeAgent>;
+  enrolAgent(
+    name?: string,
+    capacity?: { vcpu: number; memoryMb: number; diskGb: number },
+    driver?: string,
+  ): Promise<FakeAgent>;
   close(): Promise<void>;
 }
 
@@ -265,13 +269,13 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
         : h.console("POST", "/console/v1/instances", body, headers);
     },
 
-    async enrolAgent(name = "sq-node-01", capacity = { vcpu: 4, memoryMb: 8192, diskGb: 120 }) {
+    async enrolAgent(name = "sq-node-01", capacity = { vcpu: 4, memoryMb: 8192, diskGb: 120 }, driver = "fake") {
       const { token } = await services.hosts.createEnrolmentToken({ hostName: name, now: clock.now() });
       const keys = ed25519();
       const res = await app.inject({
         method: "POST",
         url: "/v1/agent/enrol",
-        payload: { token, name, driver: "fake", publicKey: pem(keys.publicKey, "spki"), capacity },
+        payload: { token, name, driver, publicKey: pem(keys.publicKey, "spki"), capacity },
       });
       if (res.statusCode !== 201) throw new Error(`enrol failed: ${res.statusCode} ${res.body}`);
       const body = res.json() as { hostId: string; jobSigningKeys: Record<string, string> };
