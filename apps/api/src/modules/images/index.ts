@@ -1,6 +1,6 @@
 /**
  * Images: the pilot catalogue. It is fixed in code for C1; the host agent
- * maps each id to a template on its hypervisor (C1b).
+ * maps each id to a template on its hypervisor (C1e).
  */
 
 import type { FastifyInstance } from "fastify";
@@ -40,7 +40,7 @@ export function createImages(catalogue: readonly Image[] = PILOT_IMAGES): Images
   };
 }
 
-/** `GET /v1/images` (Cloud-facing). */
-export function registerImageRoutes(app: FastifyInstance, images: Images): void {
-  app.get("/v1/images", async () => ({ images: images.list() }));
+/** `GET /console/v1/images`, inside the Console session guard. */
+export function registerConsoleImageRoutes(app: FastifyInstance, images: Images): void {
+  app.get("/console/v1/images", async () => ({ images: images.list() }));
 }

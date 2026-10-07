@@ -1,19 +1,25 @@
 /**
- * Hosts (the fleet): enrolment, listing and drain.
+ * Hosts (the fleet): enrolment, listing, drain, disable and enable.
  *
  * Enrolment uses a one-time token created by a staff route. The token is
- * shown once and stored only as its SHA-256 hash. A host enrols with the
- * token and its Ed25519 public key and starts as `enrolled`; its first
- * verified signed request makes it `active` (proof that it holds the key).
+ * shown once, stored only as its SHA-256 hash, works once and expires after
+ * 30 minutes. A host enrols with the token and its Ed25519 public key and
+ * starts as `enrolled`; its first verified signed request makes it
+ * `active` (proof that it holds the key).
+ *
+ * Disable is the kill switch: the host gets no new work, its agent may
+ * claim only stop jobs, and a stop is queued for every running instance on
+ * it (through the injected `onDisable`). Enable reverses the first two;
+ * stopped instances stay stopped.
  */
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { EnrolRequest, Host } from "@softqraft/compute-contracts";
+import { ENROLMENT_TOKEN_TTL_SECONDS, type EnrolRequest, type Host } from "@softqraft/compute-contracts";
 import { loadPublicKey } from "@softqraft/compute-jobs";
 import { HttpError } from "../../lib/errors.js";
 import type { ComputeStore, HostRow, Resources, StoreTx } from "../../store/index.js";
 
-export { registerEnrolRoute, registerFleetRoutes } from "./routes.js";
+export { registerEnrolRoute, registerFleetRoutes, type FleetAudit } from "./routes.js";
 
 export const ENROLMENT_TOKEN_PREFIX = "sqet_";
 
@@ -26,7 +32,7 @@ export interface FleetHost extends Host {
 }
 
 export interface Hosts {
-  createEnrolmentToken(input: { hostName?: string; ttlSeconds?: number; now: Date }): Promise<{
+  createEnrolmentToken(input: { hostName?: string; now: Date }): Promise<{
     token: string;
     hostName: string | null;
     expiresAt: Date;
@@ -34,6 +40,10 @@ export interface Hosts {
   enrol(input: EnrolRequest, now: Date): Promise<HostRow>;
   list(): Promise<FleetHost[]>;
   drain(hostId: string): Promise<HostRow>;
+  /** The kill switch. Returns the host and how many stops were queued. */
+  disable(hostId: string, now: Date): Promise<{ host: HostRow; stopsQueued: number }>;
+  /** Back to `active` (or `enrolled` if the host has never been seen). */
+  enable(hostId: string): Promise<HostRow>;
   /** Record a verified agent request: last seen, and `enrolled` becomes `active`. */
   markSeen(tx: StoreTx, host: HostRow, now: Date): Promise<HostRow>;
 }
@@ -53,16 +63,19 @@ export function toHost(row: HostRow): Host {
 
 const ENROL_INVALID = () => new HttpError(401, "enrolment_invalid", "Enrolment token is invalid, used or expired");
 
+const HOST_NOT_FOUND = () => new HttpError(404, "host_not_found", "Host not found");
+
 export function createHosts(deps: {
   store: ComputeStore;
   /** Driver names this build knows (from the driver registry). */
   isKnownDriver: (name: string) => boolean;
-  defaultTokenTtlSeconds: number;
+  /** Queues a stop for every running instance on a host (the instances module). */
+  onDisable: (tx: StoreTx, hostId: string, now: Date) => Promise<number>;
 }): Hosts {
   return {
-    async createEnrolmentToken({ hostName, ttlSeconds, now }) {
+    async createEnrolmentToken({ hostName, now }) {
       const token = `${ENROLMENT_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
-      const expiresAt = new Date(now.getTime() + (ttlSeconds ?? deps.defaultTokenTtlSeconds) * 1000);
+      const expiresAt = new Date(now.getTime() + ENROLMENT_TOKEN_TTL_SECONDS * 1000);
       await deps.store.transaction((tx) =>
         tx.insertEnrolmentToken({ tokenHash: hashToken(token), hostName: hostName ?? null, createdAt: now, expiresAt }),
       );
@@ -112,10 +125,33 @@ export function createHosts(deps: {
     async drain(hostId) {
       return deps.store.transaction(async (tx) => {
         const host = await tx.getHost(hostId);
-        if (!host) throw new HttpError(404, "host_not_found", "Host not found");
+        if (!host) throw HOST_NOT_FOUND();
         if (host.state === "draining") return host;
         if (host.state === "disabled") throw new HttpError(409, "host_disabled", "Host is disabled");
         const next: HostRow = { ...host, state: "draining" };
+        await tx.updateHost(next);
+        return next;
+      });
+    },
+
+    async disable(hostId, now) {
+      return deps.store.transaction(async (tx) => {
+        const host = await tx.getHost(hostId);
+        if (!host) throw HOST_NOT_FOUND();
+        const next: HostRow = { ...host, state: "disabled" };
+        if (host.state !== "disabled") await tx.updateHost(next);
+        // Repeating the kill switch queues stops for anything running again.
+        const stopsQueued = await deps.onDisable(tx, hostId, now);
+        return { host: next, stopsQueued };
+      });
+    },
+
+    async enable(hostId) {
+      return deps.store.transaction(async (tx) => {
+        const host = await tx.getHost(hostId);
+        if (!host) throw HOST_NOT_FOUND();
+        if (host.state === "active" || host.state === "enrolled") return host;
+        const next: HostRow = { ...host, state: host.lastSeenAt ? "active" : "enrolled" };
         await tx.updateHost(next);
         return next;
       });

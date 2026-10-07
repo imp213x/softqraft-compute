@@ -4,7 +4,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { JobAttemptRequest, JobFailRequest } from "@softqraft/compute-contracts";
+import { JobAttemptRequest, JobCompleteRequest, JobFailRequest } from "@softqraft/compute-contracts";
 import { HttpError } from "../../lib/errors.js";
 import { jsonBody, type Clock } from "../../lib/http.js";
 import { uuidParam } from "../../lib/params.js";
@@ -15,12 +15,16 @@ function hostOf(req: FastifyRequest): string {
   return req.agentHost.id;
 }
 
+/** The kill switch: a disabled host may claim only stop jobs. */
+const DISABLED_HOST_JOB_TYPES = Object.freeze(["stop"] as const);
+
 export function registerAgentJobRoutes(app: FastifyInstance, deps: { jobs: Jobs; clock: Clock }): void {
   const { jobs, clock } = deps;
 
   app.post("/v1/agent/jobs/claim", async (req) => {
     const hostId = hostOf(req);
-    return { job: await jobs.claim(hostId, clock()) };
+    const types = req.agentHost!.state === "disabled" ? DISABLED_HOST_JOB_TYPES : undefined;
+    return { job: await jobs.claim(hostId, clock(), { types }) };
   });
 
   app.post("/v1/agent/jobs/:id/heartbeat", async (req) => {
@@ -34,8 +38,8 @@ export function registerAgentJobRoutes(app: FastifyInstance, deps: { jobs: Jobs;
   app.post("/v1/agent/jobs/:id/complete", async (req) => {
     const hostId = hostOf(req);
     const id = uuidParam(req, "id", "job");
-    const { attempt } = JobAttemptRequest.parse(jsonBody(req));
-    const job = await jobs.complete(hostId, id, attempt, clock());
+    const { attempt, result } = JobCompleteRequest.parse(jsonBody(req));
+    const job = await jobs.complete(hostId, id, attempt, result, clock());
     return { jobId: job.id, state: job.state };
   });
 
