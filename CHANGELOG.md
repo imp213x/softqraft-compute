@@ -45,3 +45,10 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 ### Removed
 
 - The C1a `/v1/projects/*` and `/v1/images` routes, the deny-all `/v1/fleet/*` routes and the `OperatorAuthorizer`.
+
+### Fixed
+
+- The kill switch can no longer be undone by an agent request in flight: agent auth records `last_seen_at` and promotes only `enrolled` hosts, in one conditional update, and never writes the host's state back.
+- A create or start that completes while its host is being disabled is stopped: job outcomes and host state changes take the host row lock (`FOR UPDATE`), so disable and completion are serialised.
+- Snapshots and resizes read their instance under the pool lock, so a snapshot is never checked or sized against a disk a concurrent resize has changed.
+- Locks are taken in one order everywhere: pool, then host, then instance.
