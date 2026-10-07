@@ -987,4 +987,31 @@ describe("configuration", () => {
       /COMPUTE_TRUSTED_PROXY_CIDRS/,
     );
   });
+
+  it("refuses COMPUTE_COOKIE_SECURE=false except on a local development URL (review finding 3)", async () => {
+    const { loadConfig } = await import("../src/config.js");
+    const base = {
+      NODE_ENV: "development",
+      COMPUTE_STORE: "memory",
+      COMPUTE_JOB_SIGNING_KEY_PEM: ed25519().privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    };
+    const federated = {
+      ...base,
+      CLOUD_FEDERATION_ENABLED: "true",
+      CLOUD_FEDERATION_PUBLIC_KEYS: JSON.stringify({ k: ed25519().publicKey.export({ type: "spki", format: "pem" }).toString() }),
+    };
+    const off = { COMPUTE_COOKIE_SECURE: "false" };
+    // https: never.
+    assert.throws(() => loadConfig({ ...base, ...off, COMPUTE_PUBLIC_URL: "https://compute.example" }), /COMPUTE_COOKIE_SECURE/);
+    // Federation on with a non-local URL: never.
+    assert.throws(() => loadConfig({ ...federated, ...off, COMPUTE_PUBLIC_URL: "http://compute.example" }), /COMPUTE_COOKIE_SECURE/);
+    // Local development URLs: allowed.
+    for (const url of ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost"]) {
+      assert.equal(loadConfig({ ...federated, ...off, COMPUTE_PUBLIC_URL: url }).cookieSecure, false, url);
+    }
+    // No public URL means the local listener (http://127.0.0.1): allowed.
+    assert.equal(loadConfig({ ...federated, ...off }).cookieSecure, false);
+    // Secure on is always fine.
+    assert.equal(loadConfig({ ...federated, COMPUTE_COOKIE_SECURE: "true", COMPUTE_PUBLIC_URL: "http://compute.example" }).cookieSecure, true);
+  });
 });

@@ -21,6 +21,12 @@ interface Pause {
 
 export class HookedStore implements ComputeStore {
   private pause: Pause | null = null;
+  private failing: keyof StoreTx | null = null;
+
+  /** Make the next call of `method` throw, as a failed insert would. */
+  failNext(method: keyof StoreTx): void {
+    this.failing = method;
+  }
 
   constructor(readonly inner: ComputeStore) {}
 
@@ -55,6 +61,10 @@ export class HookedStore implements ComputeStore {
           const value = Reflect.get(target, prop, receiver);
           if (typeof value !== "function") return value;
           return async (...args: unknown[]) => {
+            if (this.failing === prop) {
+              this.failing = null;
+              throw new Error(`injected failure in ${String(prop)}`);
+            }
             const result = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
             const p = this.pause;
             if (p && p.method === prop && p.predicate(args, result)) {
