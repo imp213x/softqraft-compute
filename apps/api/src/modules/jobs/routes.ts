@@ -15,8 +15,12 @@ function hostOf(req: FastifyRequest): string {
   return req.agentHost.id;
 }
 
-/** The kill switch: a disabled host may claim only stop jobs. */
-const DISABLED_HOST_JOB_TYPES = Object.freeze(["stop"] as const);
+/**
+ * The kill switch: a disabled host may claim only jobs that remove what it
+ * runs, `stop` and `delete`. A VM already being deleted must not be left
+ * powered on.
+ */
+const DISABLED_HOST_JOB_TYPES = Object.freeze(["stop", "delete"] as const);
 
 export function registerAgentJobRoutes(app: FastifyInstance, deps: { jobs: Jobs; clock: Clock }): void {
   const { jobs, clock } = deps;

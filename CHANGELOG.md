@@ -39,7 +39,7 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 - Instances, usage and quotas belong to a Cloud service instance (`serviceInstanceId`) instead of a raw Cloud project id. `COMPUTE_ALLOWED_PROJECTS` still lists Cloud project ids and is checked through the service instance.
 - `diskGb` is optional on create and defaults to 16 GB.
 - Enrolment tokens always expire after 30 minutes; `COMPUTE_ENROLMENT_TOKEN_TTL_SECONDS` and the `ttlSeconds` field are gone.
-- A disabled host's agent still authenticates, but can claim only stop jobs. `host_disabled` is no longer an agent auth error.
+- A disabled host's agent still authenticates, but can claim only stop and delete jobs. `host_disabled` is no longer an agent auth error.
 - A failed snapshot job marks the snapshot `error` and no longer moves its instance to `error`.
 
 ### Removed
@@ -52,3 +52,4 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 - A create or start that completes while its host is being disabled is stopped: job outcomes and host state changes take the host row lock (`FOR UPDATE`), so disable and completion are serialised.
 - Snapshots and resizes read their instance under the pool lock, so a snapshot is never checked or sized against a disk a concurrent resize has changed.
 - Locks are taken in one order everywhere: pool, then host, then instance.
+- The kill switch no longer leaves a VM that is being deleted running: a disabled host may claim delete jobs as well as stops.

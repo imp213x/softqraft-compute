@@ -8,7 +8,7 @@
  * `active` (proof that it holds the key).
  *
  * Disable is the kill switch: the host gets no new work, its agent may
- * claim only stop jobs, and a stop is queued for every running instance on
+ * claim only stop and delete jobs, and a stop is queued for every running instance on
  * it (through the injected `onDisable`). Enable reverses the first two;
  * stopped instances stay stopped.
  */

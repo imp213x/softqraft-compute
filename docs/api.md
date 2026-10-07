@@ -284,7 +284,7 @@ Viewers may read. Owners and admins may write, with a session younger than 15 mi
 
 The kill switch (`POST hosts/:id/disable`) returns `{ "host", "stopsQueued" }`:
 - the host becomes `disabled` and gets no new work;
-- its agent can claim only `stop` jobs;
+- its agent can claim only `stop` and `delete` jobs, so pending stops and deletes still run;
 - a stop is queued for every running instance on it;
 - an instance that comes up on it later is stopped as soon as it does.
 
@@ -324,7 +324,7 @@ The API checks these in order; the first failure decides:
 4. The signature is valid. Otherwise **401 `agent_signature`**.
 5. The nonce is unused in the last 600 s. Otherwise **401 `agent_replay`**.
 
-A disabled host still authenticates, so that it can run the kill switch's stops. `signAgentRequest` in [`packages/jobs`](../packages/jobs/src/agent-request.ts) builds the headers. A host starts as `enrolled`; its first verified signed request makes it `active`.
+A disabled host still authenticates, so that it can run the kill switch's stops and any pending deletes. `signAgentRequest` in [`packages/jobs`](../packages/jobs/src/agent-request.ts) builds the headers. A host starts as `enrolled`; its first verified signed request makes it `active`.
 
 ### `POST /v1/agent/enrol` (unsigned)
 
@@ -342,7 +342,7 @@ Errors:
 
 ### `POST /v1/agent/jobs/claim`
 
-**200** `{ "job": SignedJob | null }`. Leases the host's oldest queued job (only `stop` jobs on a disabled host) and counts an attempt.
+**200** `{ "job": SignedJob | null }`. Leases the host's oldest queued job (only `stop` and `delete` jobs on a disabled host) and counts an attempt.
 
 ```json
 { "keyId": "job-1", "signature": "base64url",

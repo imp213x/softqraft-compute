@@ -11,7 +11,7 @@
  * - An expired lease returns the job to the queue the same way.
  * - A `console` job completes with a ticket (`result`), which the API hands
  *   to the browser once (`takeResult`) and then clears.
- * - A disabled host (the kill switch) may claim only `stop` jobs.
+ * - A disabled host (the kill switch) may claim only `stop` and `delete` jobs.
  *
  * Envelopes, signatures and keys are never logged.
  */

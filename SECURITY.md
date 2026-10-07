@@ -34,7 +34,7 @@ Email **support@softqraftlabs.com** with a description, the affected component a
 - **Operator launch** and the Admin routes exist only while `CLOUD_OPERATOR_LAUNCH_ENABLED=true`. Turning it off ends every operator session, because the routes are gone. There is no local operator login and no break-glass credential.
 - **Kill switch.** `POST /admin/v1/fleet/hosts/:id/disable`:
   - stops new work on the host;
-  - lets its agent claim only stop jobs;
+  - lets its agent claim only stop and delete jobs, so a VM already being deleted is still removed;
   - queues a stop for every running instance on it;
   - stops anything that comes up there later.
   It is recorded as a security event. The switch holds under concurrency: disable, drain, enable and every job outcome lock the host row, and agent requests only record `last_seen_at` (and promote an `enrolled` host), so no request in flight can write the host back to `active` or bring an instance up unseen. The host-side kill switch (agent and VMs) arrives with C1e.
