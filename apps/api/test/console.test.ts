@@ -8,7 +8,11 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { after, before, describe, it } from "node:test";
+import { MemoryComputeStore } from "../src/store/index.js";
+import { consoleStoreSuite } from "./console-suites.js";
 import { harness, instanceOf, SI, OTHER_SI, type Harness } from "./helpers.js";
+
+consoleStoreSuite("memory store", async () => new MemoryComputeStore());
 
 /** One SSH wire-format string: uint32 length, then the bytes. */
 function sshString(bytes: Buffer): Buffer {

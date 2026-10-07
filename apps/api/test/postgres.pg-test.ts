@@ -17,6 +17,7 @@ import { grantFrom, harness, idempotencyKey, instanceOf, principal, SI } from ".
 import { findingsSuite } from "./findings.js";
 import { raceSuite } from "./races.js";
 import { behaviourSuite } from "./suites.js";
+import { consoleStoreSuite } from "./console-suites.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -62,9 +63,9 @@ describe("migrations", () => {
     schemas.push(schema);
     await withClient(null, (c) => c.query(`CREATE SCHEMA ${schema}`));
     const first = await withClient(schema, (c) => migrate(c));
-    assert.deepEqual(first.applied, ["001_initial", "002_service_instances", "003_instance_sizes"]);
+    assert.deepEqual(first.applied, ["001_initial", "002_service_instances", "003_instance_sizes", "004_ssh_keys"]);
     const second = await withClient(schema, (c) => migrate(c));
-    assert.deepEqual(second, { applied: [], skipped: ["001_initial", "002_service_instances", "003_instance_sizes"] });
+    assert.deepEqual(second, { applied: [], skipped: ["001_initial", "002_service_instances", "003_instance_sizes", "004_ssh_keys"] });
     const { rows } = await withClient(schema, (c) => c.query("SELECT id, checksum FROM schema_migrations ORDER BY id"));
     const all = await loadMigrations();
     assert.deepEqual(rows, all.map((m) => ({ id: m.id, checksum: m.checksum })));
@@ -87,12 +88,32 @@ describe("migrations", () => {
                  '2026-10-01T00:00:00Z', now())`,
       );
     });
-    const { applied } = await withClient(schema, (c) => migrate(c, all));
+    const { applied } = await withClient(schema, (c) => migrate(c, all.slice(0, 3)));
     assert.deepEqual(applied, ["003_instance_sizes"]);
     const { rows } = await withClient(schema, (c) => c.query("SELECT * FROM instance_sizes"));
     assert.equal(rows.length, 1);
     assert.equal(new Date(rows[0].effective_from).toISOString(), "2026-10-01T00:00:00.000Z");
     assert.deepEqual([rows[0].vcpu, rows[0].memory_mb, rows[0].disk_gb], [2, 2048, 16]);
+  });
+
+  it("004 keeps one fingerprint per service instance and only public key types", async () => {
+    const schema = await freshSchema();
+    await withClient(schema, async (c) => {
+      await c.query(
+        `INSERT INTO service_instances VALUES ('si-1', '11111111-1111-4111-8111-111111111111',
+           '22222222-2222-4222-8222-222222222222', 'X', 'eu-central', 'active', now(), now())`,
+      );
+      const fp = `SHA256:${"A".repeat(43)}`;
+      const insert = (id: string, type = "ssh-ed25519") =>
+        c.query(
+          `INSERT INTO ssh_keys (id, service_instance_id, name, type, bits, fingerprint, public_key, created_at)
+           VALUES ($1, 'si-1', 'k', $2, 256, $3, 'ssh-ed25519 AAAA', now())`,
+          [id, type, fp],
+        );
+      await insert("6f1c1d8e-8d0a-4c55-9a0e-0d6d9b8f2c11");
+      await assert.rejects(insert("6f1c1d8e-8d0a-4c55-9a0e-0d6d9b8f2c12"), /ssh_keys_fingerprint_by_service/);
+      await assert.rejects(insert("6f1c1d8e-8d0a-4c55-9a0e-0d6d9b8f2c13", "ssh-dss"), /check constraint/);
+    });
   });
 
   it("002 refuses to re-key instances that already exist", async () => {
@@ -232,3 +253,4 @@ describe("postgres-only guarantees", () => {
 behaviourSuite("postgres store", freshStore);
 raceSuite("postgres store", freshStore, { concurrent: true });
 findingsSuite("postgres store", freshStore);
+consoleStoreSuite("postgres store", freshStore);

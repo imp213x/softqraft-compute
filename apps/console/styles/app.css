@@ -186,3 +186,4 @@ textarea.sq-input { min-height: 96px; resize: vertical; font-family: var(--sq-mo
   .sq-create .sq-card { padding: 20px 16px; }
   .sq-card { padding: 16px; }
 }
+.sq-notice + .sq-card, .sq-notice + .sq-grid, .sq-notice + div > .sq-card { margin-top: 16px; }
