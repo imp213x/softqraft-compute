@@ -52,6 +52,29 @@ export function storeNonceStore(store: ComputeStore): NonceStore {
   };
 }
 
+export interface CloudVerifyInput {
+  method: string;
+  path: string;
+  rawBody: Buffer | string | undefined;
+  headers: Readonly<Record<string, string | readonly string[] | undefined>>;
+  now: Date;
+  nonceStore: NonceStore;
+}
+
+/** Verify one Cloud-signed request for audience `compute` (contract §2, in order). */
+export function verifyCloudSigned(publicKeys: ReadonlyMap<string, KeyObject>, input: CloudVerifyInput) {
+  return verifyRequest({
+    audience: FEDERATION_AUDIENCE,
+    method: input.method,
+    path: input.path,
+    rawBody: input.rawBody,
+    headers: input.headers,
+    keyRing: publicKeys,
+    nonceStore: input.nonceStore,
+    now: input.now,
+  });
+}
+
 export function cloudAuth(deps: {
   publicKeys: ReadonlyMap<string, KeyObject>;
   store: ComputeStore;
@@ -59,15 +82,13 @@ export function cloudAuth(deps: {
 }): preHandlerAsyncHookHandler {
   const nonceStore = storeNonceStore(deps.store);
   return async function verifyCloud(req: FastifyRequest, reply: FastifyReply) {
-    const result = await verifyRequest({
-      audience: FEDERATION_AUDIENCE,
+    const result = await verifyCloudSigned(deps.publicKeys, {
       method: req.method,
       path: req.url,
       rawBody: req.rawBody,
       headers: req.headers,
-      keyRing: deps.publicKeys,
-      nonceStore,
       now: deps.clock(),
+      nonceStore,
     });
     if (!result.ok) {
       return sendError(req, reply, new HttpError(result.status, result.code, failureMessage(result.reason)));

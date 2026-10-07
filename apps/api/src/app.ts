@@ -41,6 +41,8 @@ export interface AppDeps {
   clock?: Clock;
   /** Fleet route authoriser. Defaults to deny-all (see modules/auth). */
   operatorAuthorizer?: OperatorAuthorizer;
+  /** Where logs go (tests capture them). Defaults to stdout. */
+  logStream?: { write(line: string): void };
 }
 
 export interface Services {
@@ -120,6 +122,7 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
             level: config.logLevel,
             // Belt and braces: request headers are not logged by default.
             redact: ["req.headers", "res.headers"],
+            ...(deps.logStream ? { stream: deps.logStream } : {}),
           },
     bodyLimit: MAX_BODY_BYTES,
     genReqId: () => randomUUID(),
