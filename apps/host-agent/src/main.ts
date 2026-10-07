@@ -1,8 +1,10 @@
 /**
  * Entry point: `node dist/main.js` (systemd: softqraft-compute-agent).
  *
- * Reads `/etc/softqraft/compute-agent.env` (or COMPUTE_AGENT_ENV_FILE),
- * validates it, builds the Proxmox driver (dry-run when
+ * Reads `/etc/softqraft/compute-agent.env` (or COMPUTE_AGENT_ENV_FILE). When
+ * the agent may not read the file itself (root-only, as the runbook sets
+ * it), systemd passes the same values through `EnvironmentFile=`, and they
+ * come from the process environment instead. It validates them, builds the Proxmox driver (dry-run when
  * COMPUTE_AGENT_DRY_RUN=true) and runs the agent until SIGTERM or SIGINT.
  */
 
@@ -17,7 +19,12 @@ async function main(): Promise<void> {
   let agent: Agent;
   let log = createLogger("info");
   try {
-    const env = readEnvFile(envFile);
+    let env: Record<string, string | undefined>;
+    try {
+      env = { ...process.env, ...readEnvFile(envFile) };
+    } catch {
+      env = { ...process.env };
+    }
     const config = loadAgentConfig(env);
     log = createLogger(config.logLevel);
     const proxmox = loadProxmoxConfig(env);

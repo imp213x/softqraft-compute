@@ -9,6 +9,9 @@
   "engines": {
     "node": ">=24"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
