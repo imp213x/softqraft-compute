@@ -82,6 +82,31 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/driver-proxmox:
+    dependencies:
+      '@softqraft/compute-contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@softqraft/compute-driver':
+        specifier: workspace:*
+        version: link:../driver
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@softqraft/compute-proxmox-fake':
+        specifier: workspace:*
+        version: link:../proxmox-fake
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      tsx:
+        specifier: ^4.23.4
+        version: 4.23.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/federation:
     devDependencies:
       '@types/node':
@@ -99,6 +124,18 @@ importers:
       '@softqraft/compute-contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      tsx:
+        specifier: ^4.23.4
+        version: 4.23.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/proxmox-fake:
     devDependencies:
       '@types/node':
         specifier: ^22.20.1

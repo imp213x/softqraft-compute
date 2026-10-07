@@ -48,6 +48,12 @@ export interface VmStatus {
   snapshots: string[];
 }
 
+/** One VM the driver manages, for usage reports. */
+export interface VmSummary {
+  instanceId: string;
+  power: PowerState;
+}
+
 export interface SnapshotInfo {
   name: string;
 }
@@ -108,4 +114,6 @@ export interface HypervisorDriver {
    */
   console(instanceId: string): Promise<ConsoleTicket>;
   status(instanceId: string): Promise<VmStatus>;
+  /** Every VM this driver manages on the host, with its power state. */
+  list(): Promise<VmSummary[]>;
 }

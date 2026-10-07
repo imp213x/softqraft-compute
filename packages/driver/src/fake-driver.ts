@@ -13,6 +13,7 @@ import {
   type HypervisorDriver,
   type SnapshotInfo,
   type VmStatus,
+  type VmSummary,
 } from "./driver.js";
 
 type Operation =
@@ -188,6 +189,10 @@ export class FakeDriver implements HypervisorDriver {
     const vm = this.vms.get(instanceId);
     if (!vm) return { instanceId, power: "absent", snapshots: [] };
     return { instanceId, power: vm.power, snapshots: [...vm.snapshots] };
+  }
+
+  async list(): Promise<VmSummary[]> {
+    return [...this.vms.entries()].map(([instanceId, vm]) => ({ instanceId, power: vm.power }));
   }
 
   /** Number of VMs the fake host holds. */

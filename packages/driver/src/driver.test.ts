@@ -28,6 +28,7 @@ describe("FakeDriver", () => {
     await d.snapshot("a", "snap-1");
     await d.start("a");
     assert.deepEqual(await d.status("a"), { instanceId: "a", power: "running", snapshots: ["snap-1"] });
+    assert.deepEqual(await d.list(), [{ instanceId: "a", power: "running" }]);
     await d.delete("a");
     assert.equal((await d.status("a")).power, "absent");
   });
