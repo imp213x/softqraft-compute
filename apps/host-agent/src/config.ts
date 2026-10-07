@@ -157,8 +157,10 @@ export function readEnvFile(path: string): Record<string, string> {
 
 /**
  * Blank the one-time enrolment token in the env file, in place (the file
- * keeps its owner and mode). Returns false when the file cannot be written,
- * so the caller tells the operator to remove it.
+ * keeps its owner and mode). Returns true when the file no longer holds a
+ * token, including when it was already blank. Returns false when the token is
+ * still there because the file cannot be read or written, so the caller tells
+ * the operator to remove it.
  */
 export function wipeEnrolmentToken(path: string): boolean {
   try {

@@ -63,9 +63,13 @@ describe("agent configuration", () => {
       assert.match(after, /^COMPUTE_ENROLMENT_TOKEN=$/m);
       assert.match(after, /COMPUTE_API_URL=https:\/\/x.test/);
       assert.equal(statSync(file).mode & 0o777, 0o640);
+      // Already blank: nothing to remove, so nothing to tell the operator.
+      assert.equal(wipeEnrolmentToken(file), true);
       if (process.getuid?.() !== 0) {
+        writeFileSync(file, "COMPUTE_ENROLMENT_TOKEN=sqet_again\n");
         chmodSync(file, 0o440);
         assert.equal(wipeEnrolmentToken(file), false, "read-only file: the operator is told instead");
+        assert.match(readFileSync(file, "utf8"), /sqet_again/);
       }
       assert.equal(wipeEnrolmentToken(path.join(dir, "missing.env")), false);
     } finally {
