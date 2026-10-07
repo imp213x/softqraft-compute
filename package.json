@@ -16,7 +16,8 @@
     "typecheck": "pnpm -r --filter '!@softqraft/federation' run typecheck",
     "test": "pnpm -r --filter '!@softqraft/federation' run test",
     "test:pg": "pnpm --filter @softqraft/compute-api test:pg",
-    "test:ci": "pnpm run build && pnpm run typecheck && pnpm run test && pnpm run test:conformance && pnpm run test:pg && pnpm run check:boundaries && pnpm run check:federation-vendor",
+    "test:ci": "pnpm run build && pnpm run typecheck && pnpm run test && pnpm run test:conformance && pnpm run test:pg && pnpm run check:boundaries && pnpm run check:federation-vendor && pnpm run check:console",
+    "check:console": "node scripts/sync-parent-brand.mjs && node --test scripts/check-console-ui.test.mjs",
     "check:boundaries": "node --test scripts/check-boundaries.test.mjs && node scripts/check-boundaries.mjs",
     "check:federation-vendor": "node packages/federation/scripts/verify-vendored.mjs packages/federation",
     "test:conformance": "pnpm --filter @softqraft/compute-api test:conformance"
