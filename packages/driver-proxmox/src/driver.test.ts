@@ -51,7 +51,7 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         sockets: "1",
         memory: "2048",
         net0: "virtio,bridge=vmbr10,firewall=1",
-        ciuser: "sq",
+        ciuser: "debian",
         sshkeys: encodeURIComponent(SSH_KEY),
         ipconfig0: "ip=10.30.0.10/24,gw=10.30.0.1",
         nameserver: "1.1.1.1 9.9.9.9",
@@ -102,6 +102,8 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       assert.equal(vm.tags, instanceTag(id));
       assert.equal(vm.status, "running");
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.11"]);
+      assert.equal(vm.config.ciuser, "ubuntu", "the image's own login user, as the console shows it");
+      assert.equal(vm.rules.length, 1, "the SSH rule is added on a finished retry too");
       assert.equal(s.pve.summary().filter((c) => c.includes("/clone")).length, 0);
       assert.ok(s.pve.summary().includes(`DELETE ${Q}/2003/firewall/ipset/ipfilter-net0/10.30.0.99`));
     } finally {

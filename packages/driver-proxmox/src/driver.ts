@@ -259,7 +259,7 @@ export class ProxmoxDriver implements HypervisorDriver {
       sockets: 1,
       memory: spec.memoryMb,
       net0: `virtio,bridge=${this.config.bridge},firewall=1`,
-      ciuser: this.config.ciUser,
+      ciuser: image.loginUser,
       ...(spec.sshPublicKeys.length > 0 ? { sshkeys: encodeSshKeys(spec.sshPublicKeys) } : {}),
       ipconfig0,
       nameserver: this.config.nameservers.join(" "),

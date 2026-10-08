@@ -64,7 +64,7 @@ If anything is missing (or the file is), the agent logs `network_guard_missing` 
 | `PROXMOX_IMPORT_STORAGE` | `local` | File storage that receives vendor image downloads (`import` content) |
 | `PROXMOX_BRIDGE` | `vmbr10` | The only bridge a NIC may use |
 | `COMPUTE_VMID_RANGE` | `2000-2999` | Instance VMIDs; must not touch 9000-9099 |
-| `PROXMOX_NAMESERVERS`, `PROXMOX_CI_USER` | `1.1.1.1 9.9.9.9`, `sq` | cloud-init |
+| `PROXMOX_NAMESERVERS` | `1.1.1.1 9.9.9.9` | cloud-init. The login user is the image's own (`debian`, `ubuntu`), the same one the console's `ssh` line shows |
 | `PROXMOX_SHUTDOWN_TIMEOUT_SECONDS` | 60 | Graceful shutdown before a stop |
 | `COMPUTE_VM_DISK_MBPS` | 100 | Disk limit per VM in MB/s, for reads and for writes (1 to 1000) |
 | `COMPUTE_VM_DISK_IOPS` | 2000 | Disk limit per VM in operations per second, for reads and for writes (10 to 50000) |
@@ -93,7 +93,7 @@ Paths are under `/api2/json/nodes/<node>`. Every operation first reads `GET /clu
 
 | Operation | Writes, in order (skipped when already done) |
 |---|---|
-| create | `GET /cluster/nextid?vmid=N` for the lowest free VMID; `POST qemu/<template>/clone` (`newid`, `name=sqc-<id>`, `pool`, `storage`, `full=1`); `GET qemu/N/config` (the cloned `scsi0` volume); `PUT qemu/N/config` (`name`, `tags=sqc-<id>`, `cores`, `sockets=1`, `memory`, `net0=virtio,bridge=vmbr10,firewall=1`, `ciuser`, `sshkeys`, `ipconfig0=ip=<ip>/24,gw=10.30.0.1`, `nameserver`, `onboot=0`, `scsi0=<volume>,<its other options>,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`); `PUT qemu/N/firewall/options` (`enable=1`, `ipfilter=1`, `macfilter=1`, `dhcp=0`, `ndp=0`, `radv=0`, `policy_in=DROP`, `policy_out=ACCEPT`); `POST qemu/N/firewall/ipset` (`name=ipfilter-net0`); `POST qemu/N/firewall/ipset/ipfilter-net0` (`cidr=<ip>`); `POST qemu/N/firewall/rules` (`type=in`, `action=ACCEPT`, `proto=tcp`, `dport=22`, `source=10.30.0.1`, `comment=SoftQraft Compute SSH from host`, once: a retry first lists the rules); `PUT qemu/N/resize` (`disk=scsi0`, `size=<GB>G`); `POST qemu/N/status/start` |
+| create | `GET /cluster/nextid?vmid=N` for the lowest free VMID; `POST qemu/<template>/clone` (`newid`, `name=sqc-<id>`, `pool`, `storage`, `full=1`); `GET qemu/N/config` (the cloned `scsi0` volume); `PUT qemu/N/config` (`name`, `tags=sqc-<id>`, `cores`, `sockets=1`, `memory`, `net0=virtio,bridge=vmbr10,firewall=1`, `ciuser` (the image's login user: `debian` or `ubuntu`), `sshkeys`, `ipconfig0=ip=<ip>/24,gw=10.30.0.1`, `nameserver`, `onboot=0`, `scsi0=<volume>,<its other options>,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`); `PUT qemu/N/firewall/options` (`enable=1`, `ipfilter=1`, `macfilter=1`, `dhcp=0`, `ndp=0`, `radv=0`, `policy_in=DROP`, `policy_out=ACCEPT`); `POST qemu/N/firewall/ipset` (`name=ipfilter-net0`); `POST qemu/N/firewall/ipset/ipfilter-net0` (`cidr=<ip>`); `POST qemu/N/firewall/rules` (`type=in`, `action=ACCEPT`, `proto=tcp`, `dport=22`, `source=10.30.0.1`, `comment=SoftQraft Compute SSH from host`, once: a retry first lists the rules); `PUT qemu/N/resize` (`disk=scsi0`, `size=<GB>G`); `POST qemu/N/status/start` |
 | start | `POST qemu/N/status/start` unless running |
 | stop | `POST qemu/N/status/shutdown` (`timeout=60`); if still running, `POST qemu/N/status/stop` |
 | delete | `POST qemu/N/status/stop` if running; `DELETE qemu/N?purge=1&destroy-unreferenced-disks=1` |

@@ -13,6 +13,7 @@ All notable changes to softqraft-compute are recorded here. The format follows [
   - **`COMPUTE_AGENT_ALLOWED_IPS`:** enrolment and every `/v1/agent/` route accept only these IPs or CIDRs, checked against the trusted-proxy client IP before anything else; others get **403 `agent_ip_not_allowed`**, recorded as `agent.ip_not_allowed` with the IP only. Required in production with federation on.
   - **Pilot VM limits:** every create sets `mbps_rd`, `mbps_wr`, `iops_rd` and `iops_wr` on the VM's disk and `onboot=0`, from `COMPUTE_VM_DISK_MBPS` (default 100) and `COMPUTE_VM_DISK_IOPS` (default 2000).
   - **SSH into pilot VMs:** the VM firewall drops inbound traffic, so every create adds one inbound rule for SSH from the host's pilot-network address (`10.30.0.1`), the jump host for `ssh -J`. A retried create adds it once.
+  - **Login user per image:** cloud-init creates the image's own user (`debian` or `ubuntu`), the one the console's `ssh` line shows. `PROXMOX_CI_USER` is removed: one fixed user `sq` made the console's command wrong.
   - **Hand-built templates:** with `COMPUTE_AGENT_ENSURE_IMAGES=false`, the agent checks templates 9000 and 9001 at start and refuses create jobs with `templates_missing` while one is missing.
   - **`proxmox_tls_pin_mismatch`:** one plain log line with the pinned and presented fingerprints and the re-pin procedure.
   - **`install.sh --node-tarball FILE --node-sha256 HEX`:** installs Node 24 from the official tarball into `/opt` after checking its digest and entries, and points the unit at it. No download, no apt source.

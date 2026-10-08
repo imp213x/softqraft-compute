@@ -59,7 +59,6 @@ export interface ProxmoxConfig {
   vmidRange: { min: number; max: number };
   nameservers: string[];
   /** Cloud-init default user. */
-  ciUser: string;
   /** How long a graceful shutdown may take before the VM is stopped. */
   shutdownTimeoutSeconds: number;
   /** How long to wait for a Proxmox task (clone, download, start, …). */
@@ -96,7 +95,6 @@ const Env = z.object({
   PROXMOX_BRIDGE: z.string().regex(/^vmbr[0-9]{1,4}$/, "PROXMOX_BRIDGE must be a vmbrN bridge").default(DEFAULT_BRIDGE),
   COMPUTE_VMID_RANGE: z.string().default(DEFAULT_VMID_RANGE),
   PROXMOX_NAMESERVERS: z.string().default("1.1.1.1 9.9.9.9"),
-  PROXMOX_CI_USER: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/, "PROXMOX_CI_USER must be a Linux user name").default("sq"),
   PROXMOX_SHUTDOWN_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(600).default(60),
   PROXMOX_TASK_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(7200).default(1800),
   COMPUTE_VM_DISK_MBPS: limit("COMPUTE_VM_DISK_MBPS", DISK_LIMIT_BOUNDS.mbps),
@@ -178,7 +176,6 @@ export function loadProxmoxConfig(env: Record<string, string | undefined>): Prox
     bridge: e.PROXMOX_BRIDGE,
     vmidRange: parseVmidRange(e.COMPUTE_VMID_RANGE),
     nameservers: parseNameservers(e.PROXMOX_NAMESERVERS),
-    ciUser: e.PROXMOX_CI_USER,
     shutdownTimeoutSeconds: e.PROXMOX_SHUTDOWN_TIMEOUT_SECONDS,
     taskTimeoutSeconds: e.PROXMOX_TASK_TIMEOUT_SECONDS,
     diskLimits: { mbps: e.COMPUTE_VM_DISK_MBPS, iops: e.COMPUTE_VM_DISK_IOPS },
