@@ -33,6 +33,20 @@ describe("agent configuration", () => {
     assert.equal(loadAgentConfig({ ...BASE, COMPUTE_AGENT_DRY_RUN: "true" }).dryRun, true);
   });
 
+  it("treats blank lines, as in a copied env example, as unset", () => {
+    // Not read from deploy/: the image build's context has no deploy/ directory.
+    const copied = parseEnvFile(
+      ["COMPUTE_AGENT_DRY_RUN=true", "COMPUTE_AGENT_ENSURE_IMAGES=false", "COMPUTE_AGENT_HEARTBEAT_SECONDS=", "COMPUTE_AGENT_STATE_DIR=", "LOG_LEVEL="].join("\n"),
+    );
+    const c = loadAgentConfig({ ...copied, ...BASE });
+    assert.equal(c.ensureImages, false);
+    assert.equal(c.dryRun, true);
+    assert.equal(c.heartbeatMs, 30_000);
+    assert.equal(c.stateDir, "/var/lib/softqraft-compute-agent");
+    // A required name left blank is still missing, and named.
+    assert.throws(() => loadAgentConfig({ ...BASE, COMPUTE_API_URL: " " }), /COMPUTE_API_URL/);
+  });
+
   it("refuses plain http to a remote API, a heartbeat outside the lease, and bad values, naming variables only", () => {
     for (const change of [
       { COMPUTE_API_URL: "http://compute.softqraftlabs.com" },

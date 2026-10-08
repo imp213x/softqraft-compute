@@ -94,8 +94,15 @@ function parseApiUrl(value: string): string {
   return `${url.protocol}//${url.host}`;
 }
 
+/** Blank values count as unset, so a copied env example with empty lines takes the defaults. */
+export function withoutBlank(env: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1].trim() !== ""),
+  );
+}
+
 export function loadAgentConfig(env: Record<string, string | undefined>): AgentConfig {
-  const parsed = Env.safeParse(env);
+  const parsed = Env.safeParse(withoutBlank(env));
   if (!parsed.success) {
     const names = [...new Set(parsed.error.issues.map((i) => String(i.path[0])))].sort();
     throw new AgentConfigError(`Invalid agent configuration: ${names.join(", ")}`);

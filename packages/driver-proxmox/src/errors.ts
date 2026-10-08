@@ -51,3 +51,21 @@ export function proxmoxError(code: ProxmoxErrorCode, message: string, retryable 
 export function fenceRefused(what: string): DriverError {
   return proxmoxError(PROXMOX_ERRORS.fenceRefused, `Refused before sending: ${what}`);
 }
+
+/** Where the agent's `proxmox_tls_pin_mismatch` line sends the operator. */
+export const REPIN_DOC_URL =
+  "https://github.com/imp213x/softqraft-compute/blob/main/docs/host-agent.md#re-pin-after-a-certificate-change";
+
+/**
+ * The API certificate does not match PROXMOX_TLS_FINGERPRINT. It carries both
+ * fingerprints so the agent can say what to change: they are public
+ * certificate data, never a secret.
+ */
+export class TlsPinMismatchError extends DriverError {
+  constructor(
+    readonly pinnedFingerprint: string,
+    readonly presentedFingerprint: string,
+  ) {
+    super(PROXMOX_ERRORS.tlsPinMismatch, "The Proxmox API certificate does not match the pinned fingerprint", false);
+  }
+}

@@ -148,7 +148,9 @@ function parseNameservers(value: string): string[] {
 }
 
 export function loadProxmoxConfig(env: Record<string, string | undefined>): ProxmoxConfig {
-  const parsed = Env.safeParse(env);
+  // Blank values count as unset, so a copied env example with empty lines takes the defaults.
+  const set = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v.trim() !== ""));
+  const parsed = Env.safeParse(set);
   if (!parsed.success) {
     // Name the variables only: never echo a value.
     const names = [...new Set(parsed.error.issues.map((i) => String(i.path[0])))].sort();

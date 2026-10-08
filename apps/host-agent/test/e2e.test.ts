@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import type { Instance, Snapshot } from "@softqraft/compute-contracts";
+import { REPIN_DOC_URL } from "@softqraft/compute-driver-proxmox";
+import { generateTestCertificate } from "@softqraft/compute-proxmox-fake";
 import { loadSigningKey } from "@softqraft/compute-jobs";
 import { ComputeApi } from "../src/api.js";
 import { startE2E, type E2E } from "./harness.js";
@@ -191,6 +193,48 @@ describe("host agent end to end: real API, real agent, fake Proxmox", () => {
       assert.equal(e.pve.writes().length, 0);
       assert.ok(!e.pve.calls.some((c) => c.path.includes("/clone")));
       assert.ok(e.logs.some((l) => l.includes("network_guard_missing")));
+    } finally {
+      await e.close();
+    }
+  });
+
+  it("with hand-built templates missing, logs templates_missing and refuses the create with zero writes (F4)", async () => {
+    const e = await startE2E({ ensureImages: false, hostName: "sq-node-04" });
+    try {
+      e.pve.addTemplate(9000); // Debian is there, Ubuntu (9001) is not.
+      e.start();
+      await e.waitFor("templates check", async () => e.logs.some((l) => l.includes('"msg":"templates_missing"')));
+      const line = JSON.parse(e.logs.find((l) => l.includes('"msg":"templates_missing"'))!) as { missing: unknown };
+      assert.deepEqual(line.missing, [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      await e.waitFor("host active", async () => {
+        const res = await e.browser(e.admin, "GET", "/admin/v1/fleet/hosts");
+        return ((await res.json()) as { hosts: Array<{ state: string }> }).hosts[0]?.state === "active";
+      });
+      const created = await create(e, "tpl-1");
+      await e.waitFor("instance error after refused attempts", async () => (await instance(e, created.id)).state === "error", 20_000);
+      assert.equal(e.pve.writes().length, 0, "nothing was written: no template build, no clone");
+      const failures = e.logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === "job_failed");
+      assert.ok(failures.length > 0 && failures.every((l) => l.error === "templates_missing"));
+    } finally {
+      await e.close();
+    }
+  });
+
+  it("logs proxmox_tls_pin_mismatch with both fingerprints and the doc when the certificate changed (F9)", async () => {
+    const pinned = generateTestCertificate().fingerprint;
+    const e = await startE2E({ tlsFingerprint: pinned, hostName: "sq-node-05" });
+    try {
+      e.start();
+      await e.waitFor("pin mismatch line", async () => e.logs.some((l) => l.includes('"msg":"proxmox_tls_pin_mismatch"')));
+      const lines = e.logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === "proxmox_tls_pin_mismatch");
+      assert.equal(lines[0]!.pinnedFingerprint, pinned);
+      assert.equal(lines[0]!.presentedFingerprint, e.pve.certificate.fingerprint);
+      assert.equal(lines[0]!.doc, REPIN_DOC_URL);
+      // Usage runs every 0.3 s here, yet the same mismatch is one line.
+      await new Promise((r) => setTimeout(r, 800));
+      assert.equal(e.logs.filter((l) => l.includes('"msg":"proxmox_tls_pin_mismatch"')).length, 1);
+      assert.equal(e.pve.calls.length, 0, "no request, so no token, reached the server");
+      assert.ok(!e.logs.join("").includes(e.tokenSecret));
     } finally {
       await e.close();
     }

@@ -407,6 +407,21 @@ export class ProxmoxDriver implements HypervisorDriver {
     return out;
   }
 
+  /**
+   * Read-only: which catalogue templates are not ready in the pool (a
+   * template VM at the catalogue VMID, in PROXMOX_POOL, converted). Used when
+   * the founder builds the templates by hand (COMPUTE_AGENT_ENSURE_IMAGES=false).
+   */
+  async missingTemplates(): Promise<Array<{ imageId: string; templateVmid: number }>> {
+    const vms = await this.resources();
+    return Object.values(IMAGE_CATALOGUE)
+      .filter((image) => {
+        const vm = vms.find((r) => r.vmid === image.templateVmid);
+        return !vm || vm.pool !== this.config.pool || vm.template !== 1 || (vm.node !== undefined && vm.node !== this.config.node);
+      })
+      .map((image) => ({ imageId: image.imageId, templateVmid: image.templateVmid }));
+  }
+
   /** Create any missing image templates (see images.ts). */
   async ensureImages(): Promise<EnsureImageResult[]> {
     return ensureImages({

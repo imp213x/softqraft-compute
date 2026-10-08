@@ -6,8 +6,9 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { AgentUsageSample, ConsoleTicket, EnrolRequest, EnrolResponse, JobEnvelope, SignedJob } from "@softqraft/compute-contracts";
 import { FakeDriver } from "@softqraft/compute-driver";
+import { REPIN_DOC_URL, TlsPinMismatchError } from "@softqraft/compute-driver-proxmox";
 import { publicKeyPem, signJob } from "@softqraft/compute-jobs";
-import { Agent } from "./agent.js";
+import { Agent, TEMPLATES_MISSING, type AgentDriver } from "./agent.js";
 import { ApiError, ApiUnreachable, type AgentApi, type Identity } from "./api.js";
 import { loadAgentConfig } from "./config.js";
 import { createLogger } from "./log.js";
@@ -61,7 +62,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-function build(options: { env?: Record<string, string>; guard?: boolean; driver?: FakeDriver; now?: () => Date } = {}) {
+function build(options: { env?: Record<string, string>; guard?: boolean; driver?: FakeDriver & AgentDriver; now?: () => Date } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "sq-agent-"));
   dirs.push(dir);
   const guardFile = path.join(dir, "forward.rules");
@@ -237,5 +238,72 @@ describe("Agent job handling", () => {
   it("refuses to start without a token when not enrolled", async () => {
     const { agent } = build({ env: { COMPUTE_ENROLMENT_TOKEN: "" } });
     await assert.rejects(agent.run(), /COMPUTE_ENROLMENT_TOKEN/);
+  });
+
+  it("with hand-built templates, checks them at start and refuses create jobs while one is missing (F4)", async () => {
+    const driver = new FakeDriver() as FakeDriver & AgentDriver;
+    let missing = [{ imageId: "debian-12", templateVmid: 9000 }];
+    let reads = 0;
+    driver.missingTemplates = async () => {
+      reads += 1;
+      return missing;
+    };
+    const { agent, api, lines } = build({ driver });
+    const create = job();
+    const stop = job({ type: "stop", payload: { name: "web-1" } });
+    api.jobs.push(create, stop);
+    await runUntil(agent, () => api.reports.length === 2);
+    assert.deepEqual(
+      api.reports.map((r) => [r.jobId, r.error]),
+      [
+        [create.envelope.id, TEMPLATES_MISSING],
+        [stop.envelope.id, "vm_not_found"],
+      ],
+      "the create is refused; other jobs still run",
+    );
+    assert.deepEqual(driver.calls, [{ op: "stop", instanceId: stop.envelope.instanceId }], "the driver never saw the create");
+    const missingLines = lines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === TEMPLATES_MISSING);
+    assert.equal(missingLines.length, 2, "at start, and again before the refused create");
+    assert.deepEqual(missingLines[0]!.missing, [{ imageId: "debian-12", templateVmid: 9000 }]);
+    assert.equal(missingLines[0]!.level, "error");
+
+    // The founder builds the template: the next create checks again and runs.
+    missing = [];
+    const again = job();
+    const b = build({ driver });
+    b.api.jobs.push(again, job());
+    await runUntil(b.agent, () => b.api.reports.length === 2);
+    assert.deepEqual(b.api.reports.map((r) => r.kind), ["complete", "complete"]);
+    assert.ok(b.lines.some((l) => l.includes('"msg":"templates_ok"')));
+    assert.equal(reads, 3, "at each start and before the refused create; once seen, not again");
+  });
+
+  it("does not check templates when it builds them itself (COMPUTE_AGENT_ENSURE_IMAGES=true)", async () => {
+    const driver = new FakeDriver() as FakeDriver & AgentDriver;
+    driver.missingTemplates = async () => [{ imageId: "debian-12", templateVmid: 9000 }];
+    const { agent, api } = build({ driver, env: { COMPUTE_AGENT_ENSURE_IMAGES: "true" } });
+    api.jobs.push(job());
+    await runUntil(agent, () => api.reports.length === 1);
+    assert.equal(api.reports[0]!.kind, "complete");
+  });
+
+  it("logs one plain proxmox_tls_pin_mismatch line with both fingerprints and the re-pin procedure (F9)", async () => {
+    const pinned = "AA:".repeat(31) + "AA";
+    const presented = "BB:".repeat(31) + "BB";
+    const driver = new FakeDriver();
+    driver.create = async () => {
+      throw new TlsPinMismatchError(pinned, presented);
+    };
+    const { agent, api, lines } = build({ driver });
+    api.jobs.push(job(), job());
+    await runUntil(agent, () => api.reports.length === 2);
+    assert.deepEqual(api.reports.map((r) => r.error), ["proxmox_tls_pin_mismatch", "proxmox_tls_pin_mismatch"]);
+    const pin = lines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === "proxmox_tls_pin_mismatch");
+    assert.equal(pin.length, 1, "one line while the same certificate is presented");
+    assert.equal(pin[0]!.level, "error");
+    assert.equal(pin[0]!.pinnedFingerprint, pinned);
+    assert.equal(pin[0]!.presentedFingerprint, presented);
+    assert.equal(pin[0]!.doc, REPIN_DOC_URL);
+    assert.match(String(pin[0]!.action), /PROXMOX_TLS_FINGERPRINT/);
   });
 });

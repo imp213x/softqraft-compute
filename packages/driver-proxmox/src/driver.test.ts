@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 import { DriverError } from "@softqraft/compute-driver";
 import { generateTestCertificate } from "@softqraft/compute-proxmox-fake";
-import { PROXMOX_ERRORS } from "./errors.js";
+import { PROXMOX_ERRORS, TlsPinMismatchError } from "./errors.js";
 import { diskSizeMb, encodeSshKeys, instanceTag, ipConfig } from "./driver.js";
 import { createInput, IMPORT_STORAGE, NODE, POOL, setup, SSH_KEY, STORAGE } from "./test-support.test-helper.js";
 
@@ -208,6 +208,28 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
     }
   });
 
+  it("reports which hand-built templates are missing, with reads only (F4)", async () => {
+    const s = await setup();
+    try {
+      assert.deepEqual(await s.driver.missingTemplates(), [
+        { imageId: "debian-12", templateVmid: 9000 },
+        { imageId: "ubuntu-24.04", templateVmid: 9001 },
+      ]);
+      s.pve.addTemplate(9000);
+      // A VM at 9001 that is not a template, or not in the pool, does not count.
+      s.pve.addVm({ vmid: 9001, pool: POOL, name: "half-built" });
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      s.pve.vms.get(9001)!.template = 1;
+      s.pve.vms.get(9001)!.pool = "elsewhere";
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      s.pve.vms.get(9001)!.pool = POOL;
+      assert.deepEqual(await s.driver.missingTemplates(), []);
+      assert.equal(s.pve.writes().length, 0, "reads only");
+    } finally {
+      await s.close();
+    }
+  });
+
   it("has no console in C1", async () => {
     const s = await setup();
     try {
@@ -313,9 +335,18 @@ describe("fences: refused before anything is sent", () => {
 
 describe("TLS pinning and the token", () => {
   it("sends nothing to a server whose certificate does not match the pin", async () => {
-    const s = await setup({ env: { PROXMOX_TLS_FINGERPRINT: generateTestCertificate().fingerprint } });
+    const pinned = generateTestCertificate().fingerprint;
+    const s = await setup({ env: { PROXMOX_TLS_FINGERPRINT: pinned } });
     try {
       await assert.rejects(s.driver.list(), code(PROXMOX_ERRORS.tlsPinMismatch));
+      // F9: the error names both fingerprints, so the agent can say what changed.
+      await assert.rejects(s.driver.list(), (err: unknown) => {
+        assert.ok(err instanceof TlsPinMismatchError);
+        assert.equal(err.pinnedFingerprint, pinned);
+        assert.equal(err.presentedFingerprint, s.pve.certificate.fingerprint);
+        assert.equal(err.retryable, false);
+        return true;
+      });
       assert.ok(s.pve.connections >= 1, "the client connected");
       assert.equal(s.pve.calls.length, 0, "no HTTP request, so no token, reached the server");
     } finally {
