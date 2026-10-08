@@ -20,7 +20,7 @@ RUN if ! command -v openssl >/dev/null 2>&1; then \
     fi
 
 # pnpm through corepack, at the version package.json pins (packageManager).
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm --version
+RUN corepack enable pnpm && corepack prepare pnpm@9.15.0 --activate && pnpm --version
 
 
 FROM build-base AS build
