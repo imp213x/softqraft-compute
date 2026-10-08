@@ -57,6 +57,7 @@ export interface FakeVm {
   snapshots: string[];
   firewall: Record<string, string>;
   ipsets: Map<string, string[]>;
+  rules: Array<Record<string, string>>;
   /** Not listed in /cluster/resources (a VM the token cannot see). */
   hidden?: boolean;
   /** The guest ignores ACPI shutdown. */
@@ -168,6 +169,7 @@ export class FakeProxmox {
       snapshots: [],
       firewall: {},
       ipsets: new Map(),
+      rules: [],
       ...vm,
     };
     this.vms.set(full.vmid, full);
@@ -384,6 +386,14 @@ export class FakeProxmox {
       if (method === "GET") return { ...vm.firewall };
       if (method === "PUT") {
         Object.assign(vm.firewall, params);
+        return null;
+      }
+    }
+    if ((m = /^\/qemu\/([0-9]+)\/firewall\/rules$/.exec(rest))) {
+      const vm = this.vm(m[1]!);
+      if (method === "GET") return vm.rules.map((r, pos) => ({ pos, ...r }));
+      if (method === "POST") {
+        vm.rules.unshift({ ...params });
         return null;
       }
     }

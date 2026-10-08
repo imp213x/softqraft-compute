@@ -92,6 +92,7 @@ describe("dry run", () => {
           `PUT ${Q}/2000/firewall/options`,
           `POST ${Q}/2000/firewall/ipset`,
           `POST ${Q}/2000/firewall/ipset/ipfilter-net0`,
+          `POST ${Q}/2000/firewall/rules`,
           `PUT ${Q}/2000/resize`,
           `POST ${Q}/2000/status/start`,
         ],

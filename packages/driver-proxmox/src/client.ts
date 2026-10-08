@@ -67,6 +67,7 @@ const NODE_ROUTES: readonly Route[] = [
   { name: "vm.snapshots", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/snapshot$/, vmid: "instance", writeParams: ["snapname", "description"] },
   { name: "vm.snapshot.delete", methods: ["DELETE"], pattern: /^\/qemu\/([0-9]+)\/snapshot\/[A-Za-z][A-Za-z0-9_-]{1,39}$/, vmid: "instance", writeParams: [] },
   { name: "vm.firewall.options", methods: ["GET", "PUT"], pattern: /^\/qemu\/([0-9]+)\/firewall\/options$/, vmid: "instance", writeParams: ["enable", "ipfilter", "macfilter", "dhcp", "ndp", "radv", "policy_in", "policy_out"] },
+  { name: "vm.firewall.rules", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/rules$/, vmid: "instance", writeParams: ["type", "action", "proto", "dport", "source", "enable", "comment"] },
   { name: "vm.ipsets", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset$/, vmid: "instance", writeParams: ["name", "comment"] },
   { name: "vm.ipset", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset\/ipfilter-net0$/, vmid: "instance", writeParams: ["cidr", "comment"] },
   { name: "vm.ipset.entry", methods: ["DELETE"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset\/ipfilter-net0\/[0-9a-fA-F.:%/]+$/, vmid: "instance", writeParams: [] },

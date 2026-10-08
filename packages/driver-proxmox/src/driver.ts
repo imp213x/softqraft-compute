@@ -35,6 +35,8 @@ import type { ProxmoxTransport } from "./transport.js";
 
 export const INSTANCE_TAG_PREFIX = "sqc-";
 export const IPSET_NAME = "ipfilter-net0";
+/** Marks the one inbound rule: SSH from the host's address on the pilot network (its gateway). */
+export const SSH_RULE_COMMENT = "SoftQraft Compute SSH from host";
 const DISK = "scsi0";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Production's network (never configured on a pilot VM). */
@@ -266,6 +268,7 @@ export class ProxmoxDriver implements HypervisorDriver {
       [DISK]: diskWithLimits(disk, this.config.diskLimits),
     });
     await this.antiSpoofing(vmid, input.privateIp, fresh);
+    await this.sshFromHost(vmid, input.network.gateway, fresh);
     await this.client.task("PUT", this.path(vmid, "/resize"), { disk: DISK, size: `${spec.diskGb}G` });
     if (fresh || (await this.power(vmid)) !== "running") {
       await this.client.task("POST", this.path(vmid, "/status/start"));
@@ -301,6 +304,28 @@ export class ProxmoxDriver implements HypervisorDriver {
     for (const cidr of cidrs.filter((c) => c && !wanted(c))) {
       await this.client.call("DELETE", `${ipsetPath}/${encodeURIComponent(cidr)}`);
     }
+  }
+
+  /**
+   * Inbound is DROP by default, so the VM firewall gets one rule: SSH from the
+   * host's pilot-network address, the jump host for `ssh -J`. Nothing else can
+   * open a connection to a tenant (runbook section 3).
+   */
+  private async sshFromHost(vmid: number, gateway: string, fresh: boolean): Promise<void> {
+    const rulesPath = this.path(vmid, "/firewall/rules");
+    if (!fresh) {
+      const rules = ((await this.client.get(rulesPath)) as Array<{ comment?: string }> | null) ?? [];
+      if (rules.some((r) => r.comment === SSH_RULE_COMMENT)) return;
+    }
+    await this.client.call("POST", rulesPath, {
+      type: "in",
+      action: "ACCEPT",
+      proto: "tcp",
+      dport: "22",
+      source: gateway,
+      enable: 1,
+      comment: SSH_RULE_COMMENT,
+    });
   }
 
   async start(instanceId: string): Promise<void> {

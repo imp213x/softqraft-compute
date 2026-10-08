@@ -28,6 +28,7 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         `PUT ${Q}/2000/firewall/options`,
         `POST ${Q}/2000/firewall/ipset`,
         `POST ${Q}/2000/firewall/ipset/ipfilter-net0`,
+        `POST ${Q}/2000/firewall/rules`,
         `PUT ${Q}/2000/resize`,
         `GET /nodes/${NODE}/tasks/<upid>/status`,
         `POST ${Q}/2000/status/start`,
@@ -62,6 +63,9 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       });
       assert.deepEqual(byPath("POST", "/firewall/ipset"), { name: "ipfilter-net0", comment: "SoftQraft Compute address" });
       assert.deepEqual(byPath("POST", "/ipset/ipfilter-net0"), { cidr: "10.30.0.10" });
+      assert.deepEqual(byPath("POST", "/firewall/rules"), {
+        type: "in", action: "ACCEPT", proto: "tcp", dport: "22", source: "10.30.0.1", enable: "1", comment: "SoftQraft Compute SSH from host",
+      });
       assert.deepEqual(byPath("PUT", "/resize"), { disk: "scsi0", size: "16G" });
 
       const vm = s.pve.vms.get(2000)!;
@@ -78,6 +82,7 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       assert.equal(s.pve.summary().filter((c) => c.endsWith("/status/start")).length, 0, "already running");
       assert.equal([...s.pve.vms.values()].filter((v) => v.tags.includes(id)).length, 1);
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.10"]);
+      assert.equal(vm.rules.length, 1, "the SSH rule is added once");
       assert.equal((await s.driver.list()).length, 1);
     } finally {
       await s.close();
