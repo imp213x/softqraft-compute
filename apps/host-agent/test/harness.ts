@@ -101,6 +101,8 @@ export async function startE2E(options: E2EOptions = {}): Promise<E2E> {
       COMPUTE_ALLOWED_PROJECTS: PROJECT,
       COMPUTE_JOB_SIGNING_KEY_PEM: jobKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
       COMPUTE_MAINTENANCE_INTERVAL_SECONDS: "1",
+      // F3: the agent routes accept only this address (the agent runs here).
+      COMPUTE_AGENT_ALLOWED_IPS: "127.0.0.1",
       CLOUD_FEDERATION_ENABLED: "true",
       CLOUD_OPERATOR_LAUNCH_ENABLED: "true",
       CLOUD_FEDERATION_PUBLIC_KEYS: JSON.stringify({
