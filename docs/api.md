@@ -18,7 +18,7 @@ Unknown paths return **404 `not_found`**. Request bodies are limited to 64 KiB (
 | `/console/`, `/admin/` | Browsers | The Console and staff fleet pages (static files, see [Pages](#pages)) |
 | `/console/v1/…` | Customer browser, same origin | Console session cookie from a §3.2 launch |
 | `/admin/v1/…` | Staff browser, same origin | Operator session cookie from a §8.2 launch |
-| `/v1/agent/…` | Host agent | Host-signed (`enrol` uses a one-time token) |
+| `/v1/agent/…` | Host agent | Only from `COMPUTE_AGENT_ALLOWED_IPS`, then host-signed (`enrol` uses a one-time token) |
 | `/health`, `/ready` | Monitoring | None |
 
 - `/cloud/v1/*` and `/console/v1/*` exist only when `CLOUD_FEDERATION_ENABLED=true`.
@@ -367,6 +367,10 @@ manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
 The pages use hash routes: Console `#/` (VMs), `#/new` (create), `#/vm/<id>`; Admin `#/` (hosts), `#/instances`. `pnpm --filter @softqraft/compute-api preview` serves them locally on seeded fake data.
 
 ## Agent routes
+
+### Allowed addresses
+
+Every agent route, `enrol` included, first checks the client IP against `COMPUTE_AGENT_ALLOWED_IPS` (IPs or CIDRs), before the body is read. The client IP is the one the trusted-proxy rules resolve: `X-Forwarded-For` counts only from a peer in `COMPUTE_TRUSTED_PROXY_CIDRS`, and then the right-most address not in that list is the client. Any other address gets **403 `agent_ip_not_allowed`**, recorded as the security event `agent.ip_not_allowed` with the IP only (at most 10 events per IP per minute; every request is still refused). An empty list allows any IP; production with federation on refuses to start without one. In production the list holds the hosts' public IPs, beside the Cloudflare rule that blocks these routes from anywhere else (softqraft_labs `myDocs/compute/runbook.md`).
 
 ### Agent request signatures
 

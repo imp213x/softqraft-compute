@@ -6,7 +6,9 @@
 #   sh ./deploy/scripts/build-compute-image.sh --agent-bundle /tmp/softqraft-compute-agent.tar.gz
 #
 # --agent-bundle also exports the host agent bundle built and gated in the same
-# build, as a tarball for install.sh --from (docs/host-agent.md), and prints its SHA-256.
+# build, as one tarball with bundle/ (for install.sh --from) and install/ (this
+# commit's deploy/host-agent: install.sh, the unit, the env example), and prints
+# its SHA-256 (docs/host-agent.md, "Install").
 set -eu
 
 script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -74,14 +76,16 @@ if [ -n "$agent_bundle" ]; then
     --build-arg BUILD_REVISION="$revision" \
     --build-arg BUILD_SOURCE="${source_url:-unknown}" \
     --target host-agent-bundle \
-    --output "type=local,dest=${bundle_directory}" \
+    --output "type=local,dest=${bundle_directory}/bundle" \
     .
-  if [ ! -f "${bundle_directory}/dist/main.js" ]; then
+  if [ ! -f "${bundle_directory}/bundle/dist/main.js" ]; then
     rm -rf "$bundle_directory"
     printf '%s\n' 'The host agent bundle has no dist/main.js.' >&2
     exit 1
   fi
-  tar -czf "$agent_bundle" -C "$bundle_directory" .
+  cp -R deploy/host-agent "${bundle_directory}/install"
+  printf '%s\n' "$revision" > "${bundle_directory}/COMMIT"
+  tar -czf "$agent_bundle" -C "$bundle_directory" COMMIT bundle install
   rm -rf "$bundle_directory"
   printf 'Host agent bundle %s (commit %s)\n' "$agent_bundle" "$revision"
   sha256sum "$agent_bundle"

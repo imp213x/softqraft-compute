@@ -6,6 +6,17 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 
 ### Added
 
+- C1f-a: Compute ready to deploy, and the pilot host ready to set up (founder decisions F1 to F9, 2026-10-08). Nothing is deployed.
+  - **Image:** a multi-stage `Dockerfile` on Cloud's pinned Node 24 slim base, pnpm through corepack, whose build runs the new `pnpm run test:image` gate (everything in `test:ci` except the Postgres tests, which stay in CI). The runtime stage holds only the API's production dependencies, `dist`, migrations and console assets, and runs as `node`. A `host-agent-bundle` target exports the gated agent bundle. `.dockerignore` keeps `.git`, `node_modules`, `.env*`, `deploy/`, `.github/`, `docs/` and key files out of the context.
+  - **`deploy/scripts/build-compute-image.sh`:** refuses a dirty tree, tags `softqraft/compute:<full commit SHA>`, checks the entry point, migrations, console and non-root user; `--agent-bundle` writes the agent bundle with `install.sh` as one tarball and prints its SHA-256.
+  - **`deploy/compose/compute.compose.yml`:** the `softqraft-compute` project for SQ-CLOUD-01. `compute-api` on `127.0.0.1:8080`, read-only, `cap_drop: ALL`, `no-new-privileges`, PID limit, 1 CPU and 1 GB, health check, log rotation, on the external network `softqraft-edge` as `compute-api` for Cloud's `cloudflared`. Migrations run from `dist`: `run --rm --no-deps compute-api node dist/migrate.js`. `deploy/compose/deployment.env.example`.
+  - **`COMPUTE_AGENT_ALLOWED_IPS`:** enrolment and every `/v1/agent/` route accept only these IPs or CIDRs, checked against the trusted-proxy client IP before anything else; others get **403 `agent_ip_not_allowed`**, recorded as `agent.ip_not_allowed` with the IP only. Required in production with federation on.
+  - **Pilot VM limits:** every create sets `mbps_rd`, `mbps_wr`, `iops_rd` and `iops_wr` on the VM's disk and `onboot=0`, from `COMPUTE_VM_DISK_MBPS` (default 100) and `COMPUTE_VM_DISK_IOPS` (default 2000).
+  - **Hand-built templates:** with `COMPUTE_AGENT_ENSURE_IMAGES=false`, the agent checks templates 9000 and 9001 at start and refuses create jobs with `templates_missing` while one is missing.
+  - **`proxmox_tls_pin_mismatch`:** one plain log line with the pinned and presented fingerprints and the re-pin procedure.
+  - **`install.sh --node-tarball FILE --node-sha256 HEX`:** installs Node 24 from the official tarball into `/opt` after checking its digest and entries, and points the unit at it. No download, no apt source.
+  - `docs/deploy.md` (first-time setup, release, rollback); `docs/host-agent.md` gains the Node install, the templates prerequisite and the re-pin procedure.
+
 - C1e: the host agent and the Proxmox driver:
   - `@softqraft/compute-host-agent` (`apps/host-agent`, Node 24): configuration from `/etc/softqraft/compute-agent.env` validated with zod; an Ed25519 host key (0600) and the enrolment record in `/var/lib/softqraft-compute-agent` (0700); first-run enrolment with the one-time token, then the token is blanked in the env file or the operator is told to remove it; a loop that claims, verifies (`verifyJob`), runs and reports jobs, heartbeating inside the 120 s lease, with exponential backoff while the API is unreachable; usage samples every 60 s; structured logs without secrets; graceful SIGTERM.
   - Dry run (`COMPUTE_AGENT_DRY_RUN=true`): jobs are verified, Proxmox writes are logged without secrets and never sent, and each job is failed with `dry_run`.
@@ -58,6 +69,9 @@ All notable changes to softqraft-compute are recorded here. The format follows [
   - `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example` and `docs/api.md`.
 
 ### Changed
+
+- A create now reads the cloned VM's config once (for its disk volume) and its config write also carries `onboot` and `scsi0`. The client fence allows `scsi0` in a config write only for the VM's own volume on `PROXMOX_STORAGE`.
+- Blank lines in the agent's env file count as unset, so a copied env example takes the defaults. The example starts with `COMPUTE_AGENT_DRY_RUN=true` and `COMPUTE_AGENT_ENSURE_IMAGES=false`.
 
 - **The 15-minute rule for Console deletes.** `DELETE` of an instance or a snapshot needs a Console sign-in from the last 15 minutes; otherwise **403 `reauth_required`**, recorded as `auth.console_reauth_required`. A new Cloud launch resets it.
 - The browser CSP is stricter: `default-src 'none'`, no `'unsafe-inline'` styles and no `data:` images.

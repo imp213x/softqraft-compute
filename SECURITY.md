@@ -8,8 +8,8 @@ Email **support@softqraftlabs.com** with a description, the affected component a
 
 | Component | Supported |
 |---|---|
-| Compute API (`apps/api`) | `main`. Nothing is deployed yet (C1 pilot in build). |
-| Host agent (`apps/host-agent`) | `main`. Not installed on any host yet (C1f). |
+| Compute API (`apps/api`) | `main`. Nothing is deployed yet: the image and Compose project are ready, the founder deploys on C1f-b. |
+| Host agent (`apps/host-agent`) | `main`. Not installed on any host yet (C1f-b). |
 | `packages/*` | The versions in this repository. Not published. |
 
 ## Secrets
@@ -17,6 +17,7 @@ Email **support@softqraftlabs.com** with a description, the affected component a
 - Keys live only in the environment, never in the repository, logs or the database. `.env` and `.env.*` are git-ignored; `.env.example` holds placeholders only.
 - `COMPUTE_JOB_SIGNING_KEY_PEM` (Ed25519 private key) signs every job. Agents get only the public key, at enrolment.
 - `CLOUD_FEDERATION_PUBLIC_KEYS` holds Cloud's public keys (not secret). `DATABASE_URL` carries a database password.
+- In production these live only in `/etc/softqraft/compute/runtime.env` on SQ-CLOUD-01, with the same owner and mode as Cloud's `runtime.env`. The founder types the Neon login and generates the job signing key on the VM ([`docs/deploy.md`](docs/deploy.md)). The image holds no secret, and `.dockerignore` keeps `.env*` and key files out of the build context.
 - Host keys: each host generates its own Ed25519 key pair; the API stores only the public key. The agent keeps the private key in `/var/lib/softqraft-compute-agent/host-key.pem` (mode 0600, directory 0700) and refuses to start if either is readable by others.
 - The agent's env file `/etc/softqraft/compute-agent.env` (owner root, mode 0600) holds the Proxmox token secret and, until first start, the enrolment token. The founder writes it on the host; it is never in git, chat or a ticket.
 - **Proxmox token scope.** The agent's token `compute-agent@pve!agent` has the `ComputeAgent` role only on the pilot pool, the pilot storage and `vmbr10` (runbook section 4). The agent sends it only as `Authorization: PVEAPIToken=…`, only to the local API, and never logs it.
@@ -46,10 +47,17 @@ Email **support@softqraftlabs.com** with a description, the affected component a
   It is recorded as a security event in the same transaction as the change; every fleet write is, so a change without its audit record never commits. The switch holds under concurrency: disable, drain, enable and every job outcome lock the host row, and agent requests only record `last_seen_at` (and promote an `enrolled` host), so no request in flight can write the host back to `active` or bring an instance up unseen. On the host, `systemctl stop softqraft-compute-agent` stops the agent, and the runbook's kill-switch command stops every pilot VM.
 - Agents sign every request with their host key: body hash, a 300 s timestamp window and a single-use nonce. Agents verify every job's signature, target host and expiry before running it.
 - The host agent pulls jobs over outbound HTTPS. No management port is opened on a host.
+- **Agent allow-list (founder decision F3).** Enrolment and every `/v1/agent/` route first check the client IP against `COMPUTE_AGENT_ALLOWED_IPS` (sq-node-01's public IP in the pilot), before the body is read. Anything else gets 403 `agent_ip_not_allowed`, recorded as the security event `agent.ip_not_allowed` with the IP only (at most 10 per IP per minute; every request is still refused). Production with federation on refuses to start without the list. The client IP comes from the trusted-proxy rules: `X-Forwarded-For` counts only from `COMPUTE_TRUSTED_PROXY_CIDRS` (the `softqraft-edge` Docker network). That subnet includes its gateway, which is the VM itself: a process on SQ-CLOUD-01 calling `127.0.0.1:8080` could set the header. That is accepted because the VM is already the trust boundary (its deploy user controls Docker). In front of it, a Cloudflare rule blocks these routes from every other source. Neither check tells the host from its guests: every VM on sq-node-01 (pilot VMs included) leaves through the same public address. The allow-list narrows who can try; host signatures and one-time enrolment tokens remain the authentication.
 - Only projects in `COMPUTE_ALLOWED_PROJECTS` may create instances (none by default). Pool caps hold under concurrency.
 - The pilot network may never overlap `10.20.0.0/24` (production); startup refuses such a range.
 - **Abuse controls.** The host's iptables rules (runbook section 3) block outbound SMTP and forwarding to production and rate-limit new connections. The agent checks at every start that the SMTP and production blocks are present and runs no job otherwise (`network_guard_missing`). Every VM gets the Proxmox firewall with IP and MAC filtering, inbound DROP, and the `ipfilter-net0` ipset pinned to its assigned address.
 - The API never holds hypervisor credentials: console tickets come from the host agent. The Proxmox driver offers no console in C1.
+
+## Image and container
+
+- **Release gate.** The image build runs `pnpm run test:image` (build, typecheck, unit tests, the §9 conformance runner, boundaries, the vendored kit and the console checks) and fails without an image if anything fails. The Postgres tests run in CI. `build-compute-image.sh` refuses a dirty tree, tags the full commit SHA and checks the entry point, the migrations, the console and the non-root user.
+- **Base.** The same pinned Node 24 slim image (by digest) as Cloud. The runtime stage holds only the API's production dependencies, its `dist`, the migrations and the console assets, root-owned, run as `node`.
+- **Container** (`deploy/compose/compute.compose.yml`): read-only root file system, `tmpfs` `/tmp` (`noexec`, `nosuid`, `nodev`), every capability dropped, `no-new-privileges`, a PID limit, 1 CPU and 1 GB (F1), log rotation, and a health check. The port is bound to `127.0.0.1:8080` only; the public path is Cloud's `cloudflared` over the `softqraft-edge` network. No state on the VM (F2).
 
 ## Host agent and Proxmox
 
@@ -60,8 +68,12 @@ Email **support@softqraftlabs.com** with a description, the affected component a
   - storage: disks only on `PROXMOX_STORAGE`; vendor downloads only to `PROXMOX_IMPORT_STORAGE`, over https and with a checksum;
   - bridge: every NIC on `PROXMOX_BRIDGE` (`vmbr10`);
   - endpoints and parameters: a fixed list, on `PROXMOX_NODE` only.
+- **Re-pin (F9).** A certificate that no longer matches the pin is logged as one plain line with the pinned and presented fingerprints (public data) and the procedure in [`docs/host-agent.md`](docs/host-agent.md#re-pin-after-a-certificate-change). The agent never trusts the new certificate by itself.
+- **Pilot VM limits (F7).** Every pilot VM's disk gets read and write limits (`COMPUTE_VM_DISK_MBPS`, default 100 MB/s, and `COMPUTE_VM_DISK_IOPS`, default 2000), and `onboot=0`, so a pilot VM cannot starve production's disks and never starts with the host.
+- **Templates by hand (F4).** The pilot runs with `COMPUTE_AGENT_ENSURE_IMAGES=false`, so the token keeps rights only on the pool, the pilot storage and `vmbr10`. The agent only checks that the templates exist, and refuses creates while one is missing (`templates_missing`).
+- **Node on the host (F6).** `install.sh` installs Node 24 only from the official tarball, after checking its SHA-256 against the digest the operator took from nodejs.org's `SHASUMS256.txt`, into `/opt`. No apt source is added, and the script never downloads.
 - **Dry run** (`COMPUTE_AGENT_DRY_RUN=true`) sends no Proxmox write at all: writes are logged with secrets replaced and SSH keys counted, and every job is failed with `dry_run`.
 - **Jobs** run only after `verifyJob` accepts them (signature by a key received at enrolment, this host, not expired). A refused job never reaches the driver.
-- **Images** are downloaded by Proxmox with the hash from the vendor's published checksum list; a mismatch is discarded before import. The lists' GPG signatures are not verified yet.
+- **Images**, when the agent builds them (`COMPUTE_AGENT_ENSURE_IMAGES=true`), are downloaded by Proxmox with the hash from the vendor's published checksum list; a mismatch is discarded before import. The lists' GPG signatures are not verified yet.
 - **The unit** runs as `softqraft-compute` with `NoNewPrivileges`, `ProtectSystem=strict`, write access only to the state directory, `PrivateTmp`, no capabilities and only IP and Unix sockets. Only its `ExecStartPre` runs privileged, to snapshot the FORWARD rules read-only.
 - **Logs** are structured and redacted: no tokens, keys, signatures, envelopes or payloads.
