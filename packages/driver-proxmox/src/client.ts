@@ -12,7 +12,9 @@
  * - `pool` is PROXMOX_POOL, `storage` and every disk are on PROXMOX_STORAGE
  *   (vendor downloads alone go to PROXMOX_IMPORT_STORAGE), and every NIC is
  *   on PROXMOX_BRIDGE;
- * - write parameters come from a fixed list per endpoint.
+ * - write parameters come from a fixed list per endpoint;
+ * - a config write may name only the VM's own `scsi0` volume on
+ *   PROXMOX_STORAGE (to set its IO limits), never another volume or an import.
  */
 
 import type { ProxmoxConfig } from "./config.js";
@@ -39,7 +41,7 @@ interface Route {
 
 const CONFIG_PARAMS = [
   "name", "tags", "description", "cores", "sockets", "memory", "balloon", "net0", "ciuser", "sshkeys",
-  "ipconfig0", "nameserver", "searchdomain", "onboot", "agent",
+  "ipconfig0", "nameserver", "searchdomain", "onboot", "agent", "scsi0",
 ] as const;
 
 const CREATE_PARAMS = [
@@ -65,6 +67,7 @@ const NODE_ROUTES: readonly Route[] = [
   { name: "vm.snapshots", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/snapshot$/, vmid: "instance", writeParams: ["snapname", "description"] },
   { name: "vm.snapshot.delete", methods: ["DELETE"], pattern: /^\/qemu\/([0-9]+)\/snapshot\/[A-Za-z][A-Za-z0-9_-]{1,39}$/, vmid: "instance", writeParams: [] },
   { name: "vm.firewall.options", methods: ["GET", "PUT"], pattern: /^\/qemu\/([0-9]+)\/firewall\/options$/, vmid: "instance", writeParams: ["enable", "ipfilter", "macfilter", "dhcp", "ndp", "radv", "policy_in", "policy_out"] },
+  { name: "vm.firewall.rules", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/rules$/, vmid: "instance", writeParams: ["type", "action", "proto", "dport", "source", "enable", "comment"] },
   { name: "vm.ipsets", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset$/, vmid: "instance", writeParams: ["name", "comment"] },
   { name: "vm.ipset", methods: ["GET", "POST"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset\/ipfilter-net0$/, vmid: "instance", writeParams: ["cidr", "comment"] },
   { name: "vm.ipset.entry", methods: ["DELETE"], pattern: /^\/qemu\/([0-9]+)\/firewall\/ipset\/ipfilter-net0\/[0-9a-fA-F.:%/]+$/, vmid: "instance", writeParams: [] },
@@ -196,6 +199,15 @@ export class ProxmoxClient {
       if (params.pool === undefined) throw fenceRefused("creating a VM outside PROXMOX_POOL");
     }
     if (route.name === "vm.resize" && params.disk !== "scsi0") throw fenceRefused("resizing a disk other than scsi0");
+    if (route.name === "vm.config" && method === "PUT" && params.scsi0 !== undefined) {
+      const vmid = Number(match[1]);
+      const spec = String(params.scsi0);
+      const volume = spec.split(",")[0] ?? "";
+      if (!new RegExp(`^${escape(this.fence.storage)}:vm-${vmid}-disk-[0-9]+$`).test(volume)) {
+        throw fenceRefused("a disk volume that is not the VM's own on PROXMOX_STORAGE");
+      }
+      if (/(?:^|,)import-from=/.test(spec)) throw fenceRefused("an import in a config write");
+    }
 
     if (method !== "GET") this.checkWriteValues(params);
   }

@@ -202,7 +202,7 @@ test("every API error code a browser can meet has one plain sentence with a next
   for (const code of ["not_supported", "reauth_required", "federation_unknown_instance", "federation_instance_disabled", "payload_too_large", "unsupported_media_type", "bad_request"]) codes.add(code);
   // Reached only by host agents (signed) or by Cloud (server to server), never by a browser.
   const NOT_BROWSER = new Set([
-    "agent_unauthenticated", "enrolment_invalid", "invalid_public_key", "invalid_result", "job_not_found",
+    "agent_ip_not_allowed", "agent_unauthenticated", "enrolment_invalid", "invalid_public_key", "invalid_result", "job_not_found",
     "lease_expired", "lease_lost", "sample_out_of_range", "unknown_driver", "unknown_instance",
   ]);
   assert.ok(codes.size > 40, `found ${codes.size} codes`);

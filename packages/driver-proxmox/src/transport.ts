@@ -16,7 +16,7 @@ import https from "node:https";
 import type { Duplex } from "node:stream";
 import tls from "node:tls";
 import type { ProxmoxConfig } from "./config.js";
-import { PROXMOX_ERRORS, proxmoxError } from "./errors.js";
+import { PROXMOX_ERRORS, proxmoxError, TlsPinMismatchError } from "./errors.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 export type Params = Record<string, string | number>;
@@ -71,7 +71,8 @@ class PinnedAgent extends https.Agent {
       const peer = socket.getPeerCertificate();
       if (!peer || peer.fingerprint256 !== this.fingerprint) {
         socket.destroy();
-        done(proxmoxError(PROXMOX_ERRORS.tlsPinMismatch, "The Proxmox API certificate does not match the pinned fingerprint"));
+        const presented = typeof peer?.fingerprint256 === "string" && peer.fingerprint256 ? peer.fingerprint256 : "none";
+        done(new TlsPinMismatchError(this.fingerprint, presented));
         return;
       }
       done(null, socket);

@@ -35,6 +35,8 @@ import type { ProxmoxTransport } from "./transport.js";
 
 export const INSTANCE_TAG_PREFIX = "sqc-";
 export const IPSET_NAME = "ipfilter-net0";
+/** Marks the one inbound rule: SSH from the host's address on the pilot network (its gateway). */
+export const SSH_RULE_COMMENT = "SoftQraft Compute SSH from host";
 const DISK = "scsi0";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Production's network (never configured on a pilot VM). */
@@ -88,12 +90,39 @@ export function diskSizeMb(spec: string): number | null {
   return n * factor;
 }
 
+/** Disk options the driver owns: the limits, and the bursts and combined forms that would loosen them. */
+const LIMIT_OPTION = /^(?:mbps|iops)(?:_rd|_wr)?(?:_max(?:_length)?)?$/;
+
+/**
+ * The disk spec with the pilot IO limits (decision F7): the volume and its
+ * other options as they are, any earlier limit or burst option replaced by
+ * `iops_rd`, `iops_wr`, `mbps_rd` and `mbps_wr`. Applying it twice gives the
+ * same spec, so a retried create sets the same limits again.
+ */
+export function diskWithLimits(spec: string, limits: { mbps: number; iops: number }): string {
+  const [volume = "", ...options] = spec.split(",").filter((part, i) => i === 0 || part.length > 0);
+  const kept = options.filter((option) => !LIMIT_OPTION.test(option.split("=")[0] ?? ""));
+  return [
+    volume,
+    ...kept,
+    `iops_rd=${limits.iops}`,
+    `iops_wr=${limits.iops}`,
+    `mbps_rd=${limits.mbps}`,
+    `mbps_wr=${limits.mbps}`,
+  ].join(",");
+}
+
 function snapshotNameOk(name: string): boolean {
   // Proxmox needs at least two characters and reserves `current`.
   return /^[A-Za-z][A-Za-z0-9_-]{1,39}$/.test(name) && name !== "current";
 }
 
 export interface ProxmoxDriverOptions extends ProxmoxClientOptions {
+  /**
+   * Writes are logged, not sent (the transport does that). The driver only
+   * needs to know so it does not read back a VM a dry-run clone never made.
+   */
+  dryRun?: boolean;
   /** Vendor checksum list fetcher for ensureImages (tests inject one). */
   fetchText?: FetchText;
   log?: (event: string, fields: Record<string, unknown>) => void;
@@ -105,6 +134,7 @@ export class ProxmoxDriver implements HypervisorDriver {
   readonly client: ProxmoxClient;
   private readonly fetchText: FetchText;
   private readonly log?: (event: string, fields: Record<string, unknown>) => void;
+  private readonly dryRun: boolean;
 
   constructor(
     private readonly config: ProxmoxConfig,
@@ -114,6 +144,7 @@ export class ProxmoxDriver implements HypervisorDriver {
     this.client = new ProxmoxClient(config, transport, { taskTimeoutSeconds: config.taskTimeoutSeconds, ...options });
     this.fetchText = options.fetchText ?? defaultFetchText;
     this.log = options.log;
+    this.dryRun = options.dryRun ?? false;
   }
 
   private path(vmid: number, rest = ""): string {
@@ -211,6 +242,16 @@ export class ProxmoxDriver implements HypervisorDriver {
     }
     const vmid = vm.vmid;
 
+    // The disk's IO limits (F7) need its volume, which the clone named. A
+    // dry run made no clone, so it plans with the name a full clone gets.
+    const disk =
+      fresh && this.dryRun
+        ? `${this.config.storage}:vm-${vmid}-disk-0`
+        : String((((await this.client.get(this.path(vmid, "/config"))) as Record<string, unknown> | null) ?? {})[DISK] ?? "");
+    if (!disk.startsWith(`${this.config.storage}:`)) {
+      throw proxmoxError(PROXMOX_ERRORS.badResponse, "The VM has no scsi0 disk on PROXMOX_STORAGE");
+    }
+
     await this.client.call("PUT", this.path(vmid, "/config"), {
       name: spec.name,
       tags: tag,
@@ -218,12 +259,16 @@ export class ProxmoxDriver implements HypervisorDriver {
       sockets: 1,
       memory: spec.memoryMb,
       net0: `virtio,bridge=${this.config.bridge},firewall=1`,
-      ciuser: this.config.ciUser,
+      ciuser: image.loginUser,
       ...(spec.sshPublicKeys.length > 0 ? { sshkeys: encodeSshKeys(spec.sshPublicKeys) } : {}),
       ipconfig0,
       nameserver: this.config.nameservers.join(" "),
+      // F7: pilot VMs never start with the host, and their disk is IO-limited.
+      onboot: 0,
+      [DISK]: diskWithLimits(disk, this.config.diskLimits),
     });
     await this.antiSpoofing(vmid, input.privateIp, fresh);
+    await this.sshFromHost(vmid, input.network.gateway, fresh);
     await this.client.task("PUT", this.path(vmid, "/resize"), { disk: DISK, size: `${spec.diskGb}G` });
     if (fresh || (await this.power(vmid)) !== "running") {
       await this.client.task("POST", this.path(vmid, "/status/start"));
@@ -259,6 +304,28 @@ export class ProxmoxDriver implements HypervisorDriver {
     for (const cidr of cidrs.filter((c) => c && !wanted(c))) {
       await this.client.call("DELETE", `${ipsetPath}/${encodeURIComponent(cidr)}`);
     }
+  }
+
+  /**
+   * Inbound is DROP by default, so the VM firewall gets one rule: SSH from the
+   * host's pilot-network address, the jump host for `ssh -J`. Nothing else can
+   * open a connection to a tenant (runbook section 3).
+   */
+  private async sshFromHost(vmid: number, gateway: string, fresh: boolean): Promise<void> {
+    const rulesPath = this.path(vmid, "/firewall/rules");
+    if (!fresh) {
+      const rules = ((await this.client.get(rulesPath)) as Array<{ comment?: string }> | null) ?? [];
+      if (rules.some((r) => r.comment === SSH_RULE_COMMENT)) return;
+    }
+    await this.client.call("POST", rulesPath, {
+      type: "in",
+      action: "ACCEPT",
+      proto: "tcp",
+      dport: "22",
+      source: gateway,
+      enable: 1,
+      comment: SSH_RULE_COMMENT,
+    });
   }
 
   async start(instanceId: string): Promise<void> {
@@ -363,6 +430,21 @@ export class ProxmoxDriver implements HypervisorDriver {
       out.push({ instanceId: tag.slice(4), power: vm.status === "running" ? "running" : "stopped" });
     }
     return out;
+  }
+
+  /**
+   * Read-only: which catalogue templates are not ready in the pool (a
+   * template VM at the catalogue VMID, in PROXMOX_POOL, converted). Used when
+   * the founder builds the templates by hand (COMPUTE_AGENT_ENSURE_IMAGES=false).
+   */
+  async missingTemplates(): Promise<Array<{ imageId: string; templateVmid: number }>> {
+    const vms = await this.resources();
+    return Object.values(IMAGE_CATALOGUE)
+      .filter((image) => {
+        const vm = vms.find((r) => r.vmid === image.templateVmid);
+        return !vm || vm.pool !== this.config.pool || vm.template !== 1 || (vm.node !== undefined && vm.node !== this.config.node);
+      })
+      .map((image) => ({ imageId: image.imageId, templateVmid: image.templateVmid }));
   }
 
   /** Create any missing image templates (see images.ts). */

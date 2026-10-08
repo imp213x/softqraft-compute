@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 import { DriverError } from "@softqraft/compute-driver";
 import { generateTestCertificate } from "@softqraft/compute-proxmox-fake";
-import { PROXMOX_ERRORS } from "./errors.js";
+import { PROXMOX_ERRORS, TlsPinMismatchError } from "./errors.js";
 import { diskSizeMb, encodeSshKeys, instanceTag, ipConfig } from "./driver.js";
 import { createInput, IMPORT_STORAGE, NODE, POOL, setup, SSH_KEY, STORAGE } from "./test-support.test-helper.js";
 
@@ -23,10 +23,12 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         "GET /cluster/nextid",
         `POST ${Q}/9000/clone`,
         `GET /nodes/${NODE}/tasks/<upid>/status`,
+        `GET ${Q}/2000/config`,
         `PUT ${Q}/2000/config`,
         `PUT ${Q}/2000/firewall/options`,
         `POST ${Q}/2000/firewall/ipset`,
         `POST ${Q}/2000/firewall/ipset/ipfilter-net0`,
+        `POST ${Q}/2000/firewall/rules`,
         `PUT ${Q}/2000/resize`,
         `GET /nodes/${NODE}/tasks/<upid>/status`,
         `POST ${Q}/2000/status/start`,
@@ -49,22 +51,28 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         sockets: "1",
         memory: "2048",
         net0: "virtio,bridge=vmbr10,firewall=1",
-        ciuser: "sq",
+        ciuser: "debian",
         sshkeys: encodeURIComponent(SSH_KEY),
         ipconfig0: "ip=10.30.0.10/24,gw=10.30.0.1",
         nameserver: "1.1.1.1 9.9.9.9",
+        onboot: "0",
+        scsi0: `${STORAGE}:vm-2000-disk-0,size=3G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`,
       });
       assert.deepEqual(byPath("PUT", "/firewall/options"), {
         enable: "1", ipfilter: "1", macfilter: "1", dhcp: "0", ndp: "0", radv: "0", policy_in: "DROP", policy_out: "ACCEPT",
       });
       assert.deepEqual(byPath("POST", "/firewall/ipset"), { name: "ipfilter-net0", comment: "SoftQraft Compute address" });
       assert.deepEqual(byPath("POST", "/ipset/ipfilter-net0"), { cidr: "10.30.0.10" });
+      assert.deepEqual(byPath("POST", "/firewall/rules"), {
+        type: "in", action: "ACCEPT", proto: "tcp", dport: "22", source: "10.30.0.1", enable: "1", comment: "SoftQraft Compute SSH from host",
+      });
       assert.deepEqual(byPath("PUT", "/resize"), { disk: "scsi0", size: "16G" });
 
       const vm = s.pve.vms.get(2000)!;
       assert.equal(vm.status, "running");
       assert.equal(vm.pool, POOL);
-      assert.match(vm.config.scsi0!, new RegExp(`^${STORAGE}:vm-2000-disk-0,size=16G$`));
+      assert.equal(vm.config.scsi0, `${STORAGE}:vm-2000-disk-0,size=16G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`);
+      assert.equal(vm.config.onboot, "0");
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.10"]);
 
       // A retried create finds the VM: no clone, no second VM, still one address.
@@ -74,6 +82,7 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       assert.equal(s.pve.summary().filter((c) => c.endsWith("/status/start")).length, 0, "already running");
       assert.equal([...s.pve.vms.values()].filter((v) => v.tags.includes(id)).length, 1);
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.10"]);
+      assert.equal(vm.rules.length, 1, "the SSH rule is added once");
       assert.equal((await s.driver.list()).length, 1);
     } finally {
       await s.close();
@@ -93,6 +102,8 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       assert.equal(vm.tags, instanceTag(id));
       assert.equal(vm.status, "running");
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.11"]);
+      assert.equal(vm.config.ciuser, "ubuntu", "the image's own login user, as the console shows it");
+      assert.equal(vm.rules.length, 1, "the SSH rule is added on a finished retry too");
       assert.equal(s.pve.summary().filter((c) => c.includes("/clone")).length, 0);
       assert.ok(s.pve.summary().includes(`DELETE ${Q}/2003/firewall/ipset/ipfilter-net0/10.30.0.99`));
     } finally {
@@ -204,6 +215,28 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
     }
   });
 
+  it("reports which hand-built templates are missing, with reads only (F4)", async () => {
+    const s = await setup();
+    try {
+      assert.deepEqual(await s.driver.missingTemplates(), [
+        { imageId: "debian-12", templateVmid: 9000 },
+        { imageId: "ubuntu-24.04", templateVmid: 9001 },
+      ]);
+      s.pve.addTemplate(9000);
+      // A VM at 9001 that is not a template, or not in the pool, does not count.
+      s.pve.addVm({ vmid: 9001, pool: POOL, name: "half-built" });
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      s.pve.vms.get(9001)!.template = 1;
+      s.pve.vms.get(9001)!.pool = "elsewhere";
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      s.pve.vms.get(9001)!.pool = POOL;
+      assert.deepEqual(await s.driver.missingTemplates(), []);
+      assert.equal(s.pve.writes().length, 0, "reads only");
+    } finally {
+      await s.close();
+    }
+  });
+
   it("has no console in C1", async () => {
     const s = await setup();
     try {
@@ -309,9 +342,18 @@ describe("fences: refused before anything is sent", () => {
 
 describe("TLS pinning and the token", () => {
   it("sends nothing to a server whose certificate does not match the pin", async () => {
-    const s = await setup({ env: { PROXMOX_TLS_FINGERPRINT: generateTestCertificate().fingerprint } });
+    const pinned = generateTestCertificate().fingerprint;
+    const s = await setup({ env: { PROXMOX_TLS_FINGERPRINT: pinned } });
     try {
       await assert.rejects(s.driver.list(), code(PROXMOX_ERRORS.tlsPinMismatch));
+      // F9: the error names both fingerprints, so the agent can say what changed.
+      await assert.rejects(s.driver.list(), (err: unknown) => {
+        assert.ok(err instanceof TlsPinMismatchError);
+        assert.equal(err.pinnedFingerprint, pinned);
+        assert.equal(err.presentedFingerprint, s.pve.certificate.fingerprint);
+        assert.equal(err.retryable, false);
+        return true;
+      });
       assert.ok(s.pve.connections >= 1, "the client connected");
       assert.equal(s.pve.calls.length, 0, "no HTTP request, so no token, reached the server");
     } finally {

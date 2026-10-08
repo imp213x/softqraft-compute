@@ -5,6 +5,7 @@
  */
 
 import type { KeyObject } from "node:crypto";
+import { BlockList, isIP } from "node:net";
 import { z } from "zod";
 import { parsePublicKeys } from "@softqraft/federation";
 import { DEFAULT_DISK_GB, INSTANCE_LIMITS } from "@softqraft/compute-contracts";
@@ -39,6 +40,7 @@ const EnvSchema = z.object({
   COMPUTE_PUBLIC_URL: z.string().optional(),
   COMPUTE_COOKIE_SECURE: z.enum(["true", "false"], { message: "must be true or false" }).optional(),
   COMPUTE_TRUSTED_PROXY_CIDRS: z.string().default(""),
+  COMPUTE_AGENT_ALLOWED_IPS: z.string().default(""),
 
   COMPUTE_STORE: z.enum(["postgres", "memory"]).default("postgres"),
   DATABASE_URL: z.string().optional(),
@@ -92,6 +94,13 @@ export interface ComputeConfig {
   cookieSecure: boolean;
   /** Proxies whose X-Forwarded-For is trusted (Fastify trustProxy); empty trusts none. */
   trustedProxies: string[];
+  /**
+   * Client IPs or CIDRs that may call the host-agent routes (enrolment and
+   * `/v1/agent/*`), checked against the client IP the trusted-proxy rules
+   * resolve. Empty allows any IP (development and tests only: production
+   * with federation on refuses an empty list).
+   */
+  agentAllowedIps: string[];
   store: "postgres" | "memory";
   databaseUrl: string | undefined;
   pool: PoolCaps;
@@ -187,6 +196,53 @@ function parseTrustedProxies(raw: string): string[] {
   return list;
 }
 
+/**
+ * `COMPUTE_AGENT_ALLOWED_IPS`: comma-separated IPv4 or IPv6 addresses or
+ * CIDRs. A `/0` prefix is refused: it would allow every address, which is
+ * what an empty list means, and production refuses that.
+ */
+export function parseAgentAllowedIps(raw: string): string[] {
+  const problem = () =>
+    new ConfigError("COMPUTE_AGENT_ALLOWED_IPS must be a comma-separated list of IP addresses or CIDRs (no /0)");
+  const list = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  for (const entry of list) {
+    const [address = "", prefixText, extra] = entry.split("/");
+    const family = isIP(address);
+    if (family === 0 || extra !== undefined) throw problem();
+    if (prefixText !== undefined) {
+      if (!/^\d{1,3}$/.test(prefixText)) throw problem();
+      const prefix = Number(prefixText);
+      if (prefix < 1 || prefix > (family === 4 ? 32 : 128)) throw problem();
+    }
+  }
+  return list;
+}
+
+/**
+ * A matcher for the agent allow-list. An empty list allows every IP. An
+ * IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) is checked as IPv4.
+ */
+export function agentIpMatcher(list: readonly string[]): (ip: string) => boolean {
+  if (list.length === 0) return () => true;
+  const blocks = new BlockList();
+  for (const entry of list) {
+    const [address = "", prefixText] = entry.split("/");
+    const type = isIP(address) === 6 ? "ipv6" : "ipv4";
+    if (prefixText === undefined) blocks.addAddress(address, type);
+    else blocks.addSubnet(address, Number(prefixText), type);
+  }
+  return (ip: string) => {
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+    const address = mapped ? mapped[1]! : ip;
+    const family = isIP(address);
+    if (family === 0) return false;
+    return blocks.check(address, family === 6 ? "ipv6" : "ipv4");
+  };
+}
+
 /** Parse and validate the environment. Throws ConfigError on the first problem. */
 export function loadConfig(env: Record<string, string | undefined> = process.env): ComputeConfig {
   // Treat empty strings as unset, as .env files often leave them blank.
@@ -253,6 +309,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (e.NODE_ENV === "production" && federation.enabled && (!cloudOrigin || !cloudOrigin.startsWith("https://"))) {
     throw new ConfigError("CLOUD_ORIGIN must be an https origin when NODE_ENV=production and federation is on");
   }
+  const agentAllowedIps = parseAgentAllowedIps(e.COMPUTE_AGENT_ALLOWED_IPS);
+  if (e.NODE_ENV === "production" && federation.enabled && agentAllowedIps.length === 0) {
+    throw new ConfigError(
+      "COMPUTE_AGENT_ALLOWED_IPS is required when NODE_ENV=production and federation is on (the host agents' public IPs)",
+    );
+  }
   const hostRunbookUrl = parseHttpsUrl(e.COMPUTE_HOST_RUNBOOK_URL, "COMPUTE_HOST_RUNBOOK_URL");
   const cookieSecure =
     e.COMPUTE_COOKIE_SECURE !== undefined ? e.COMPUTE_COOKIE_SECURE === "true" : Boolean(publicUrl?.startsWith("https://"));
@@ -272,6 +334,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     publicUrl,
     cookieSecure,
     trustedProxies: parseTrustedProxies(e.COMPUTE_TRUSTED_PROXY_CIDRS),
+    agentAllowedIps,
     store: e.COMPUTE_STORE,
     databaseUrl: e.DATABASE_URL,
     pool: {

@@ -5,7 +5,7 @@
  * Route contexts:
  * - probes: `/health`, `/ready`, no auth;
  * - agent: `/v1/agent/enrol` (one-time token), other `/v1/agent/*` signed by
- *   the host's key;
+ *   the host's key; all of them only from COMPUTE_AGENT_ALLOWED_IPS;
  * - Cloud (server): `/cloud/v1/*`, Cloud-signed (audience `compute`);
  * - Console (browser): `/console/v1/*`, a Console session cookie;
  * - Admin (browser, staff): `/admin/v1/*`, an operator session cookie;
@@ -20,12 +20,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { DriverRegistry } from "@softqraft/compute-driver";
-import type { ComputeConfig } from "./config.js";
+import { agentIpMatcher, type ComputeConfig } from "./config.js";
 import { applyBrowserSecurityHeaders } from "./lib/browser.js";
 import { HttpError, sendError, toHttpError } from "./lib/errors.js";
 import { MAX_BODY_BYTES, registerRawBody, systemClock, type Clock } from "./lib/http.js";
 import { MemoryRateLimiter, type RateLimiter } from "./lib/rate-limit.js";
-import { agentAuth, cloudAuth } from "./modules/auth/index.js";
+import { agentAuth, agentIpGuard, cloudAuth } from "./modules/auth/index.js";
 import { registerHealthRoutes } from "./modules/health/index.js";
 import { createHosts, registerEnrolRoute, registerFleetRoutes, type FleetAudit, type Hosts } from "./modules/hosts/index.js";
 import { createImages, registerConsoleImageRoutes, type Images } from "./modules/images/index.js";
@@ -204,6 +204,16 @@ export async function buildApp(deps: AppDeps): Promise<{ app: FastifyInstance; s
   registerHealthRoutes(app, { store });
 
   await app.register(async (agent) => {
+    // F3: only the allowed host IPs reach enrolment and every /v1/agent/ route.
+    agent.addHook(
+      "onRequest",
+      agentIpGuard({
+        allowed: agentIpMatcher(config.agentAllowedIps),
+        record: (event, now) => services.sessions.record(event, now),
+        limiter,
+        clock,
+      }),
+    );
     registerEnrolRoute(agent, { hosts: services.hosts, clock, jobSigningKeys: () => services.jobs.publicKeys() });
     await agent.register(async (signed) => {
       signed.addHook("preHandler", agentAuth({ store, hosts: services.hosts, clock }));

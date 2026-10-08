@@ -80,6 +80,10 @@ export interface E2EOptions {
   dryRun?: boolean;
   guard?: boolean;
   hostName?: string;
+  /** COMPUTE_AGENT_ENSURE_IMAGES (default true). */
+  ensureImages?: boolean;
+  /** Pin this fingerprint instead of the fake Proxmox's own. */
+  tlsFingerprint?: string;
 }
 
 export async function startE2E(options: E2EOptions = {}): Promise<E2E> {
@@ -101,6 +105,8 @@ export async function startE2E(options: E2EOptions = {}): Promise<E2E> {
       COMPUTE_ALLOWED_PROJECTS: PROJECT,
       COMPUTE_JOB_SIGNING_KEY_PEM: jobKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
       COMPUTE_MAINTENANCE_INTERVAL_SECONDS: "1",
+      // F3: the agent routes accept only this address (the agent runs here).
+      COMPUTE_AGENT_ALLOWED_IPS: "127.0.0.1",
       CLOUD_FEDERATION_ENABLED: "true",
       CLOUD_OPERATOR_LAUNCH_ENABLED: "true",
       CLOUD_FEDERATION_PUBLIC_KEYS: JSON.stringify({
@@ -204,6 +210,7 @@ export async function startE2E(options: E2EOptions = {}): Promise<E2E> {
       `COMPUTE_AGENT_STATE_DIR=${path.join(dir, "state")}`,
       `COMPUTE_AGENT_NETWORK_GUARD_FILE=${guardFile}`,
       `COMPUTE_AGENT_DRY_RUN=${options.dryRun ? "true" : "false"}`,
+      `COMPUTE_AGENT_ENSURE_IMAGES=${options.ensureImages === false ? "false" : "true"}`,
       "COMPUTE_AGENT_POLL_SECONDS=0.05",
       "COMPUTE_AGENT_HEARTBEAT_SECONDS=0.5",
       "COMPUTE_AGENT_USAGE_SECONDS=0.3",
@@ -212,7 +219,7 @@ export async function startE2E(options: E2EOptions = {}): Promise<E2E> {
       "PROXMOX_NODE=sq-node-01",
       "PROXMOX_TOKEN_ID=compute-agent@pve!agent",
       `PROXMOX_TOKEN_SECRET=${tokenSecret}`,
-      `PROXMOX_TLS_FINGERPRINT=${pve.certificate.fingerprint}`,
+      `PROXMOX_TLS_FINGERPRINT=${options.tlsFingerprint ?? pve.certificate.fingerprint}`,
       "PROXMOX_POOL=compute-pilot",
       "PROXMOX_STORAGE=compute-pilot",
       "",

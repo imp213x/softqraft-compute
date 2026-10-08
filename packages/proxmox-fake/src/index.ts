@@ -57,6 +57,7 @@ export interface FakeVm {
   snapshots: string[];
   firewall: Record<string, string>;
   ipsets: Map<string, string[]>;
+  rules: Array<Record<string, string>>;
   /** Not listed in /cluster/resources (a VM the token cannot see). */
   hidden?: boolean;
   /** The guest ignores ACPI shutdown. */
@@ -168,6 +169,7 @@ export class FakeProxmox {
       snapshots: [],
       firewall: {},
       ipsets: new Map(),
+      rules: [],
       ...vm,
     };
     this.vms.set(full.vmid, full);
@@ -308,6 +310,20 @@ export class FakeProxmox {
       const vm = this.vm(m[1]!);
       if (method === "GET") return { ...vm.config, name: vm.name, ...(vm.tags ? { tags: vm.tags } : {}) };
       if (method === "PUT") {
+        if (params.scsi0 !== undefined) {
+          // Only the disk's options may change here: the volume must be the one attached.
+          const volume = (spec: string | undefined) => (spec ?? "").split(",")[0];
+          if (volume(params.scsi0) !== volume(vm.config.scsi0)) throw new HttpFailure(500, "scsi0: volume does not match");
+          for (const option of params.scsi0.split(",").slice(1)) {
+            const [key, value] = option.split("=");
+            if (/^(?:mbps|iops)_(?:rd|wr)$/.test(key ?? "") && !/^[0-9]+$/.test(value ?? "")) {
+              throw new HttpFailure(400, `scsi0: invalid ${key}`);
+            }
+          }
+        }
+        if (params.onboot !== undefined && params.onboot !== "0" && params.onboot !== "1") {
+          throw new HttpFailure(400, "onboot: invalid boolean");
+        }
         for (const [k, v] of Object.entries(params)) {
           if (k === "name") vm.name = v;
           else if (k === "tags") vm.tags = v;
@@ -370,6 +386,14 @@ export class FakeProxmox {
       if (method === "GET") return { ...vm.firewall };
       if (method === "PUT") {
         Object.assign(vm.firewall, params);
+        return null;
+      }
+    }
+    if ((m = /^\/qemu\/([0-9]+)\/firewall\/rules$/.exec(rest))) {
+      const vm = this.vm(m[1]!);
+      if (method === "GET") return vm.rules.map((r, pos) => ({ pos, ...r }));
+      if (method === "POST") {
+        vm.rules.unshift({ ...params });
         return null;
       }
     }

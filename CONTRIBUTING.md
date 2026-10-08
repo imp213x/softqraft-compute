@@ -23,6 +23,18 @@ DATABASE_URL=postgres://… pnpm run test:ci
 
 `test:ci` builds, typechecks, runs the unit tests (the host agent's end-to-end test starts the built API, so run `pnpm run build` before `pnpm run test`), the cloud-federation-v1 §9 conformance runner (`test:conformance`) and the Postgres tests, then `check:boundaries`, `check:federation-vendor` and `check:console` (the parent brand pins and the Console UI contract). CI runs the same in `.github/workflows/ci.yml`. A test is never skipped, disabled or weakened to get green; if something cannot run, say so in the pull request.
 
+The image build runs `pnpm run test:image` (everything in `test:ci` except the Postgres tests) inside a context without `.git`, `node_modules`, `.env*`, `deploy/`, `.github/` or `docs/` ([`.dockerignore`](.dockerignore)). So a test must never read those paths: it would pass in a checkout and fail the production build. Check a change that touches tests or tooling in a copy shaped like that context too:
+
+```bash
+CTX=$(mktemp -d)
+git ls-files -co --exclude-standard | grep -Ev '^(deploy|docs|\.github)/|(^|/)\.env' \
+  | while read -r f; do [ -f "$f" ] && mkdir -p "$CTX/$(dirname "$f")" && cp -p "$f" "$CTX/$f"; done
+for d in node_modules apps/*/node_modules packages/*/node_modules; do ln -s "$PWD/$d" "$CTX/$d"; done
+(cd "$CTX" && pnpm run test:image)
+```
+
+Shell scripts pass `sh -n` and `shellcheck`.
+
 ## Code rules
 
 - Modules in `apps/api/src/modules/<module>/` talk to each other only through `index.ts`. Dependencies are injected; stores and drivers come from registries.

@@ -5,6 +5,8 @@
  *   `compute`), verified by the vendored @softqraft/federation kit. Off
  *   unless CLOUD_FEDERATION_ENABLED=true; when off, the routes are not
  *   registered at all and answer 404.
+ * - Agent routes, first: the client IP (as the trusted-proxy rules resolve
+ *   it) must be on COMPUTE_AGENT_ALLOWED_IPS, before anything else is read.
  * - Agent routes: each host signs with its own enrolled Ed25519 key. Body
  *   hash, a timestamp within 300 s and a single-use nonce are checked. A
  *   disabled host still authenticates, so that it can claim the stop jobs
@@ -15,7 +17,7 @@
  * Nothing here logs headers, signatures, keys or bodies.
  */
 
-import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from "fastify";
+import type { FastifyReply, FastifyRequest, onRequestAsyncHookHandler, preHandlerAsyncHookHandler } from "fastify";
 import type { KeyObject } from "node:crypto";
 import { verifyRequest, type NonceStore } from "@softqraft/federation";
 import {
@@ -27,6 +29,7 @@ import {
 } from "@softqraft/compute-jobs";
 import { HttpError, sendError } from "../../lib/errors.js";
 import type { Clock } from "../../lib/http.js";
+import type { RateLimiter } from "../../lib/rate-limit.js";
 import type { ComputeStore, HostRow } from "../../store/index.js";
 import type { Hosts } from "../hosts/index.js";
 
@@ -156,5 +159,43 @@ export function agentAuth(deps: { store: ComputeStore; hosts: Hosts; clock: Cloc
     });
     if ("code" in outcome) return sendError(req, reply, asHttp(outcome));
     req.agentHost = outcome;
+  };
+}
+
+/** The security event for an agent request from an address not on COMPUTE_AGENT_ALLOWED_IPS. */
+export const AGENT_IP_NOT_ALLOWED_EVENT = "agent.ip_not_allowed";
+
+/** At most this many refusal events per IP per minute reach the store; every refusal is still a 403. */
+export const AGENT_IP_EVENTS_PER_MINUTE = 10;
+
+/**
+ * The agent allow-list (founder decision F3, beside the Cloudflare rule):
+ * an `onRequest` hook, so it runs before the body is read or parsed and
+ * before any other agent check. `req.ip` is the client IP as Fastify's
+ * trusted-proxy rules (COMPUTE_TRUSTED_PROXY_CIDRS) resolve it, so an
+ * `X-Forwarded-For` header from an untrusted peer is ignored.
+ *
+ * A refusal is 403 `agent_ip_not_allowed`, recorded as a security event that
+ * carries the IP only, never a header or body.
+ */
+export function agentIpGuard(deps: {
+  allowed: (ip: string) => boolean;
+  record: (event: { action: string; detail: Record<string, string> }, now: Date) => Promise<void>;
+  limiter: RateLimiter;
+  clock: Clock;
+}): onRequestAsyncHookHandler {
+  return async function checkAgentIp(req: FastifyRequest, reply: FastifyReply) {
+    const ip = req.ip;
+    if (deps.allowed(ip)) return;
+    const now = deps.clock();
+    if (deps.limiter.take("agent-ip-event", ip, AGENT_IP_EVENTS_PER_MINUTE, 60_000, now)) {
+      try {
+        await deps.record({ action: AGENT_IP_NOT_ALLOWED_EVENT, detail: { ip } }, now);
+      } catch (err) {
+        req.log.error({ err: { type: (err as Error)?.name } }, "security event not recorded");
+      }
+    }
+    req.log.warn({ ip }, "agent_ip_not_allowed");
+    return sendError(req, reply, new HttpError(403, "agent_ip_not_allowed", "This address may not call the host agent routes"));
   };
 }

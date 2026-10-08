@@ -29,6 +29,12 @@ export interface CatalogueImage {
   algorithm: "sha256" | "sha512";
   /** The image's file name as the checksum list names it. */
   fileName: string;
+  /**
+   * The vendor's default login user, which cloud-init creates with the SSH
+   * keys. The console's `ssh` line uses the same names
+   * (apps/console/modules/shared/format.js); keep the two in step.
+   */
+  loginUser: string;
 }
 
 /**
@@ -43,6 +49,7 @@ export const IMAGE_CATALOGUE: Readonly<Record<string, CatalogueImage>> = Object.
     checksumsUrl: "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
     algorithm: "sha512",
     fileName: "debian-12-genericcloud-amd64.qcow2",
+    loginUser: "debian",
   },
   "ubuntu-24.04": {
     imageId: "ubuntu-24.04",
@@ -51,6 +58,7 @@ export const IMAGE_CATALOGUE: Readonly<Record<string, CatalogueImage>> = Object.
     checksumsUrl: "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS",
     algorithm: "sha256",
     fileName: "noble-server-cloudimg-amd64.img",
+    loginUser: "ubuntu",
   },
 });
 

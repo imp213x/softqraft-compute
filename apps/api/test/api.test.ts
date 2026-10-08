@@ -1018,6 +1018,8 @@ describe("configuration", () => {
       }),
       // C1d: production with federation also needs Cloud's https origin.
       CLOUD_ORIGIN: "https://cloud.example",
+      // C1f: and the host agents' IPs (agent-ip.test.ts covers the rule).
+      COMPUTE_AGENT_ALLOWED_IPS: "195.201.167.183",
     };
     const url = "https://compute.example";
     assert.throws(() => loadConfig(base), /COMPUTE_PUBLIC_URL/);

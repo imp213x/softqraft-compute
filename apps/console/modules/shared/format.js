@@ -93,7 +93,7 @@ export function imageName(imageId, images = []) {
   return image ? image.name : "Linux";
 }
 
-/** The login user of each image's cloud build. */
+/** The login user of each image's cloud build. The Proxmox driver creates the same users (packages/driver-proxmox/src/images.ts). */
 const SSH_USERS = Object.freeze({ "ubuntu-24.04": "ubuntu", "debian-12": "debian" });
 
 export function sshCommand(instance) {
