@@ -1,0 +1,29 @@
+# The image build context. The build runs the test gate (pnpm run test:image)
+# inside it, so no test may read anything excluded here.
+.git
+.github
+.vscode
+.idea
+deploy
+docs
+
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+.pgdata
+*.log
+
+# Secrets never enter the context.
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.env
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
