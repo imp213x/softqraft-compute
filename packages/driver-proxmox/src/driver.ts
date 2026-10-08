@@ -88,12 +88,39 @@ export function diskSizeMb(spec: string): number | null {
   return n * factor;
 }
 
+/** Disk options the driver owns: the limits, and the bursts and combined forms that would loosen them. */
+const LIMIT_OPTION = /^(?:mbps|iops)(?:_rd|_wr)?(?:_max(?:_length)?)?$/;
+
+/**
+ * The disk spec with the pilot IO limits (decision F7): the volume and its
+ * other options as they are, any earlier limit or burst option replaced by
+ * `iops_rd`, `iops_wr`, `mbps_rd` and `mbps_wr`. Applying it twice gives the
+ * same spec, so a retried create sets the same limits again.
+ */
+export function diskWithLimits(spec: string, limits: { mbps: number; iops: number }): string {
+  const [volume = "", ...options] = spec.split(",").filter((part, i) => i === 0 || part.length > 0);
+  const kept = options.filter((option) => !LIMIT_OPTION.test(option.split("=")[0] ?? ""));
+  return [
+    volume,
+    ...kept,
+    `iops_rd=${limits.iops}`,
+    `iops_wr=${limits.iops}`,
+    `mbps_rd=${limits.mbps}`,
+    `mbps_wr=${limits.mbps}`,
+  ].join(",");
+}
+
 function snapshotNameOk(name: string): boolean {
   // Proxmox needs at least two characters and reserves `current`.
   return /^[A-Za-z][A-Za-z0-9_-]{1,39}$/.test(name) && name !== "current";
 }
 
 export interface ProxmoxDriverOptions extends ProxmoxClientOptions {
+  /**
+   * Writes are logged, not sent (the transport does that). The driver only
+   * needs to know so it does not read back a VM a dry-run clone never made.
+   */
+  dryRun?: boolean;
   /** Vendor checksum list fetcher for ensureImages (tests inject one). */
   fetchText?: FetchText;
   log?: (event: string, fields: Record<string, unknown>) => void;
@@ -105,6 +132,7 @@ export class ProxmoxDriver implements HypervisorDriver {
   readonly client: ProxmoxClient;
   private readonly fetchText: FetchText;
   private readonly log?: (event: string, fields: Record<string, unknown>) => void;
+  private readonly dryRun: boolean;
 
   constructor(
     private readonly config: ProxmoxConfig,
@@ -114,6 +142,7 @@ export class ProxmoxDriver implements HypervisorDriver {
     this.client = new ProxmoxClient(config, transport, { taskTimeoutSeconds: config.taskTimeoutSeconds, ...options });
     this.fetchText = options.fetchText ?? defaultFetchText;
     this.log = options.log;
+    this.dryRun = options.dryRun ?? false;
   }
 
   private path(vmid: number, rest = ""): string {
@@ -211,6 +240,16 @@ export class ProxmoxDriver implements HypervisorDriver {
     }
     const vmid = vm.vmid;
 
+    // The disk's IO limits (F7) need its volume, which the clone named. A
+    // dry run made no clone, so it plans with the name a full clone gets.
+    const disk =
+      fresh && this.dryRun
+        ? `${this.config.storage}:vm-${vmid}-disk-0`
+        : String((((await this.client.get(this.path(vmid, "/config"))) as Record<string, unknown> | null) ?? {})[DISK] ?? "");
+    if (!disk.startsWith(`${this.config.storage}:`)) {
+      throw proxmoxError(PROXMOX_ERRORS.badResponse, "The VM has no scsi0 disk on PROXMOX_STORAGE");
+    }
+
     await this.client.call("PUT", this.path(vmid, "/config"), {
       name: spec.name,
       tags: tag,
@@ -222,6 +261,9 @@ export class ProxmoxDriver implements HypervisorDriver {
       ...(spec.sshPublicKeys.length > 0 ? { sshkeys: encodeSshKeys(spec.sshPublicKeys) } : {}),
       ipconfig0,
       nameserver: this.config.nameservers.join(" "),
+      // F7: pilot VMs never start with the host, and their disk is IO-limited.
+      onboot: 0,
+      [DISK]: diskWithLimits(disk, this.config.diskLimits),
     });
     await this.antiSpoofing(vmid, input.privateIp, fresh);
     await this.client.task("PUT", this.path(vmid, "/resize"), { disk: DISK, size: `${spec.diskGb}G` });

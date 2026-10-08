@@ -14,6 +14,18 @@ export const DEFAULT_VMID_RANGE = "2000-2999";
 export const DEFAULT_BRIDGE = "vmbr10";
 export const DEFAULT_URL = "https://127.0.0.1:8006";
 
+/**
+ * Per-VM disk limits (founder decision F7), applied to every pilot VM's
+ * disk for reads and writes separately. The upper bounds keep the setting a
+ * real cap: sq-node-01's pilot pool shares one NVMe RAID 1 mirror with
+ * production, and a single VM allowed more than about 1 GB/s or 50,000 IOPS
+ * could take a large share of that mirror from VMs 101-103.
+ */
+export const DISK_LIMIT_BOUNDS = Object.freeze({
+  mbps: { min: 1, max: 1000, fallback: 100 },
+  iops: { min: 10, max: 50_000, fallback: 2000 },
+});
+
 /** Proxmox ids for pools, storages and nodes: letters, digits, `-`, `_`, `.`. */
 const PVE_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
 /** `user@realm!tokenname`. */
@@ -52,7 +64,23 @@ export interface ProxmoxConfig {
   shutdownTimeoutSeconds: number;
   /** How long to wait for a Proxmox task (clone, download, start, …). */
   taskTimeoutSeconds: number;
+  /** Disk limits set on every VM's `scsi0`: MB/s and operations per second, each for reads and for writes. */
+  diskLimits: { mbps: number; iops: number };
 }
+
+const limit = (name: string, bounds: { min: number; max: number; fallback: number }) =>
+  z
+    .string()
+    .regex(/^[0-9]+$/, `${name} must be a whole number from ${bounds.min} to ${bounds.max}`)
+    .default(String(bounds.fallback))
+    .transform(Number)
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(bounds.min, `${name} must be a whole number from ${bounds.min} to ${bounds.max}`)
+        .max(bounds.max, `${name} must be a whole number from ${bounds.min} to ${bounds.max}`),
+    );
 
 const Env = z.object({
   PROXMOX_URL: z.string().default(DEFAULT_URL),
@@ -71,6 +99,8 @@ const Env = z.object({
   PROXMOX_CI_USER: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/, "PROXMOX_CI_USER must be a Linux user name").default("sq"),
   PROXMOX_SHUTDOWN_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(600).default(60),
   PROXMOX_TASK_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(7200).default(1800),
+  COMPUTE_VM_DISK_MBPS: limit("COMPUTE_VM_DISK_MBPS", DISK_LIMIT_BOUNDS.mbps),
+  COMPUTE_VM_DISK_IOPS: limit("COMPUTE_VM_DISK_IOPS", DISK_LIMIT_BOUNDS.iops),
 });
 
 /** Normalise a fingerprint to `AA:BB:…`, the form Node reports. */
@@ -149,5 +179,6 @@ export function loadProxmoxConfig(env: Record<string, string | undefined>): Prox
     ciUser: e.PROXMOX_CI_USER,
     shutdownTimeoutSeconds: e.PROXMOX_SHUTDOWN_TIMEOUT_SECONDS,
     taskTimeoutSeconds: e.PROXMOX_TASK_TIMEOUT_SECONDS,
+    diskLimits: { mbps: e.COMPUTE_VM_DISK_MBPS, iops: e.COMPUTE_VM_DISK_IOPS },
   };
 }

@@ -23,6 +23,7 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         "GET /cluster/nextid",
         `POST ${Q}/9000/clone`,
         `GET /nodes/${NODE}/tasks/<upid>/status`,
+        `GET ${Q}/2000/config`,
         `PUT ${Q}/2000/config`,
         `PUT ${Q}/2000/firewall/options`,
         `POST ${Q}/2000/firewall/ipset`,
@@ -53,6 +54,8 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
         sshkeys: encodeURIComponent(SSH_KEY),
         ipconfig0: "ip=10.30.0.10/24,gw=10.30.0.1",
         nameserver: "1.1.1.1 9.9.9.9",
+        onboot: "0",
+        scsi0: `${STORAGE}:vm-2000-disk-0,size=3G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`,
       });
       assert.deepEqual(byPath("PUT", "/firewall/options"), {
         enable: "1", ipfilter: "1", macfilter: "1", dhcp: "0", ndp: "0", radv: "0", policy_in: "DROP", policy_out: "ACCEPT",
@@ -64,7 +67,8 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
       const vm = s.pve.vms.get(2000)!;
       assert.equal(vm.status, "running");
       assert.equal(vm.pool, POOL);
-      assert.match(vm.config.scsi0!, new RegExp(`^${STORAGE}:vm-2000-disk-0,size=16G$`));
+      assert.equal(vm.config.scsi0, `${STORAGE}:vm-2000-disk-0,size=16G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`);
+      assert.equal(vm.config.onboot, "0");
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), ["10.30.0.10"]);
 
       // A retried create finds the VM: no clone, no second VM, still one address.

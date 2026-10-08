@@ -99,6 +99,10 @@ describe("dry run", () => {
       const config = skipped[1]!.params;
       assert.equal(config.sshkeys, "[1 public key]");
       assert.equal(config.net0, "virtio,bridge=vmbr10,firewall=1");
+      // F7: the IO limits and onboot=0 are in the plan, on the volume a full clone gets.
+      assert.equal(config.onboot, 0);
+      assert.equal(config.scsi0, `${STORAGE}:vm-2000-disk-0,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100`);
+      assert.ok(!s.pve.calls.some((c) => c.path === `${Q}/2000/config`), "no read of a VM the dry run never cloned");
       const text = JSON.stringify(skipped);
       assert.ok(!text.includes(s.env.PROXMOX_TOKEN_SECRET!), "no token in the dry-run log");
       assert.equal(s.pve.vms.size, 1, "only the template exists");

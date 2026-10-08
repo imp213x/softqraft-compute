@@ -67,7 +67,9 @@ describe("host agent end to end: real API, real agent, fake Proxmox", () => {
       assert.equal(vm.config.ipconfig0, `ip=${running.privateIp}/24,gw=10.30.0.1`);
       assert.equal(vm.config.cores, "1");
       assert.equal(vm.config.memory, "1024");
-      assert.match(vm.config.scsi0!, /^compute-pilot:vm-\d+-disk-0,size=16G$/);
+      // F7: the disk is IO-limited and the VM never starts with the host.
+      assert.match(vm.config.scsi0!, /^compute-pilot:vm-\d+-disk-0,size=16G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100$/);
+      assert.equal(vm.config.onboot, "0");
       assert.deepEqual(vm.ipsets.get("ipfilter-net0"), [running.privateIp]);
       assert.equal(vm.firewall.ipfilter, "1");
       assert.equal(vm.firewall.macfilter, "1");
@@ -96,7 +98,7 @@ describe("host agent end to end: real API, real agent, fake Proxmox", () => {
       assert.deepEqual(writes(), [`PUT ${vmPath}/config`, `PUT ${vmPath}/resize`]);
       assert.equal(vm.config.cores, "2");
       assert.equal(vm.config.memory, "2048");
-      assert.match(vm.config.scsi0!, /size=20G$/);
+      assert.match(vm.config.scsi0!, /,size=20G,iops_rd=2000,iops_wr=2000,mbps_rd=100,mbps_wr=100$/);
 
       // Start.
       e.pve.reset();
