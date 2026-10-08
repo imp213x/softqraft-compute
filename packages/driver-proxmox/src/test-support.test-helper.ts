@@ -30,6 +30,8 @@ export async function setup(
     certificate?: TestCertificate;
     env?: Record<string, string>;
     vendorFiles?: Record<string, Record<string, string>>;
+    /** False models a token whose role lacks Pool.Audit. Default true. */
+    poolAudit?: boolean;
   } = {},
 ): Promise<Setup> {
   const secret = randomUUID();
@@ -42,6 +44,7 @@ export async function setup(
     importStorage: IMPORT_STORAGE,
     vendorFiles: options.vendorFiles,
     certificate: options.certificate,
+    poolAudit: options.poolAudit,
   });
   await pve.start();
   const env: Record<string, string> = {

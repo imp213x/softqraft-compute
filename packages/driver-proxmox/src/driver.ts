@@ -35,6 +35,17 @@ import type { ProxmoxTransport } from "./transport.js";
 
 export const INSTANCE_TAG_PREFIX = "sqc-";
 export const IPSET_NAME = "ipfilter-net0";
+
+/**
+ * A catalogue template the agent cannot use, and why. `pool_not_visible`:
+ * the VM is there but Proxmox hides its pool, so the token's role lacks
+ * Pool.Audit (role.ts).
+ */
+export interface MissingTemplate {
+  imageId: string;
+  templateVmid: number;
+  reason: "not_found" | "other_node" | "not_template" | "pool_not_visible" | "other_pool";
+}
 /** Marks the one inbound rule: SSH from the host's address on the pilot network (its gateway). */
 export const SSH_RULE_COMMENT = "SoftQraft Compute SSH from host";
 const DISK = "scsi0";
@@ -437,15 +448,27 @@ export class ProxmoxDriver implements HypervisorDriver {
    * template VM at the catalogue VMID, in PROXMOX_POOL, converted). Used when
    * the founder builds the templates by hand (COMPUTE_AGENT_ENSURE_IMAGES=false).
    */
-  async missingTemplates(): Promise<Array<{ imageId: string; templateVmid: number }>> {
+  async missingTemplates(): Promise<MissingTemplate[]> {
     const vms = await this.resources();
-    return Object.values(IMAGE_CATALOGUE)
-      .filter((image) => {
-        const vm = vms.find((r) => r.vmid === image.templateVmid);
-        return !vm || vm.pool !== this.config.pool || vm.template !== 1 || (vm.node !== undefined && vm.node !== this.config.node);
-      })
-      .map((image) => ({ imageId: image.imageId, templateVmid: image.templateVmid }));
+    const out: MissingTemplate[] = [];
+    for (const image of Object.values(IMAGE_CATALOGUE)) {
+      const vm = vms.find((r) => r.vmid === image.templateVmid);
+      const reason: MissingTemplate["reason"] | null = !vm
+        ? "not_found"
+        : vm.node !== undefined && vm.node !== this.config.node
+          ? "other_node"
+          : vm.template !== 1
+            ? "not_template"
+            : vm.pool === undefined
+              ? "pool_not_visible"
+              : vm.pool !== this.config.pool
+                ? "other_pool"
+                : null;
+      if (reason) out.push({ imageId: image.imageId, templateVmid: image.templateVmid, reason });
+    }
+    return out;
   }
+
 
   /** Create any missing image templates (see images.ts). */
   async ensureImages(): Promise<EnsureImageResult[]> {

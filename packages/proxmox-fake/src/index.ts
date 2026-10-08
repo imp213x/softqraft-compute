@@ -83,6 +83,11 @@ export interface FakeProxmoxOptions {
   /** Vendor files Proxmox can "download": URL → { algorithm: hash }. */
   vendorFiles?: Record<string, Record<string, string>>;
   certificate?: TestCertificate;
+  /**
+   * Whether the token holds Pool.Audit on the pool. Proxmox VE leaves `pool`
+   * out of /cluster/resources without it. Default true (the documented role).
+   */
+  poolAudit?: boolean;
 }
 
 interface Task {
@@ -257,7 +262,7 @@ export class FakeProxmox {
           name: vm.name,
           status: vm.status,
           template: vm.template,
-          ...(vm.pool ? { pool: vm.pool } : {}),
+          ...(vm.pool && this.options.poolAudit !== false ? { pool: vm.pool } : {}),
           ...(vm.tags ? { tags: vm.tags } : {}),
         }));
     }

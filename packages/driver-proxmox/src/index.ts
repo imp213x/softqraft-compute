@@ -13,6 +13,7 @@ export * from "./transport.js";
 export * from "./client.js";
 export * from "./images.js";
 export * from "./driver.js";
+export * from "./role.js";
 
 export interface BuildProxmoxDriverOptions extends ProxmoxDriverOptions {
   /** Log every write instead of sending it; reads still go to Proxmox. */

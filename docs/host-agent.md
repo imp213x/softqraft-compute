@@ -87,6 +87,16 @@ A VM belongs to an instance by its tag `sqc-<instance id>`. A VM carrying that t
 
 Requests carry `Authorization: PVEAPIToken=<id>=<secret>`. The connection is pinned: the agent connects, compares the server certificate's SHA-256 fingerprint with `PROXMOX_TLS_FINGERPRINT`, and only then hands the socket to the HTTP client, so the token is never sent to a server that does not match. CA verification is skipped only for that pinned socket; nothing is changed globally.
 
+### Proxmox role
+
+The token belongs to `compute-agent@pve` (privilege separation off) and gets one role, `ComputeAgent`, on three paths only: `/pool/<PROXMOX_POOL>`, `/storage/<PROXMOX_STORAGE>` and `/sdn/zones/localnetwork/<PROXMOX_BRIDGE>`. Rights on the pool also cover the VMs in it, so `pveum user permissions` lists the templates (`/vms/9000`, `/vms/9001`) and the pilot VMs as well, and nothing else. The list is `PROXMOX_AGENT_ROLE_PRIVILEGES` in [`packages/driver-proxmox/src/role.ts`](../packages/driver-proxmox/src/role.ts), and a test keeps this command equal to it:
+
+```sh
+pveum role add ComputeAgent -privs "VM.Allocate VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.PowerMgmt VM.Audit VM.Console VM.Snapshot Datastore.AllocateSpace Datastore.Audit SDN.Use Pool.Audit"
+```
+
+`Pool.Audit` is read-only and required: without it Proxmox VE leaves `pool` out of `/cluster/resources`, the driver's pool fence sees no VM as its own, and the agent logs `templates_missing` with `reason: "pool_not_visible"`. This was found on sq-node-01 (Proxmox VE 9.2) during C1f-b. An existing role takes it with `pveum role modify ComputeAgent -append 1 -privs Pool.Audit`.
+
 ### Calls per operation
 
 Paths are under `/api2/json/nodes/<node>`. Every operation first reads `GET /cluster/resources?type=vm` to find the VM. Calls that return a task are followed by `GET tasks/<upid>/status` until it ends.
@@ -141,7 +151,7 @@ The pilot runs with `COMPUTE_AGENT_ENSURE_IMAGES=false` (founder decision F4), s
 - a VM at that VMID, on `PROXMOX_NODE`, in `PROXMOX_POOL`, converted to a template (`qm template`);
 - its disk is `scsi0` on `PROXMOX_STORAGE`, with a cloud-init drive and one NIC `net0` on `PROXMOX_BRIDGE` with `firewall=1`.
 
-At start the agent reads the cluster's VM list and logs `templates_ok`, or one `templates_missing` line naming what is missing. While a template is missing it refuses create jobs with `templates_missing`, without calling the driver; stop, start, delete and the other jobs still run. It checks again before the next create, so building the templates needs no restart. If it cannot read Proxmox at start it logs `templates_unchecked` with the error code, and checks again before the next create.
+At start the agent reads the cluster's VM list and logs `templates_ok`, or one `templates_missing` line naming each missing template and why: `not_found`, `other_node`, `not_template`, `other_pool`, or `pool_not_visible` (the role lacks `Pool.Audit`, see "Proxmox role"; the hint then says so). While a template is missing it refuses create jobs with `templates_missing`, without calling the driver; stop, start, delete and the other jobs still run. It checks again before the next create, so building the templates needs no restart. If it cannot read Proxmox at start it logs `templates_unchecked` with the error code, and checks again before the next create.
 
 ## Install
 
@@ -154,13 +164,13 @@ Use the Node version of the Compute image (`node:24.20.0` in the [`Dockerfile`](
 ```sh
 V=v24.20.0
 cd /root
-curl -fsSO "https://nodejs.org/dist/$V/node-$V-linux-x64.tar.xz"
-curl -fsSO "https://nodejs.org/dist/$V/SHASUMS256.txt"
+curl -fsSLO "https://nodejs.org/dist/$V/node-$V-linux-x64.tar.xz"
+curl -fsSLO "https://nodejs.org/dist/$V/SHASUMS256.txt"
 grep " node-$V-linux-x64.tar.xz\$" SHASUMS256.txt            # the published digest
 sha256sum "node-$V-linux-x64.tar.xz"                           # must print the same digest
 ```
 
-Both lines must show the same 64-character digest. Optionally, also check the release signature: `curl -fsSO https://nodejs.org/dist/$V/SHASUMS256.txt.sig` and `gpg --verify SHASUMS256.txt.sig SHASUMS256.txt` with the release keys listed in the Node.js repository's README. The `.tar.xz` needs `xz` (Debian `xz-utils`, normally present); otherwise use the `.tar.gz` and its digest.
+Both lines must show the same 64-character digest. Optionally, also check the release signature: `curl -fsSLO https://nodejs.org/dist/$V/SHASUMS256.txt.sig` and `gpg --verify SHASUMS256.txt.sig SHASUMS256.txt` with the release keys listed in the Node.js repository's README. The `.tar.xz` needs `xz` (Debian `xz-utils`, normally present); otherwise use the `.tar.gz` and its digest.
 
 ### The agent
 

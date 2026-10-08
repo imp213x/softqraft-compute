@@ -4,6 +4,16 @@ All notable changes to softqraft-compute are recorded here. The format follows [
 
 ## [Unreleased]
 
+### Deployed
+
+- 2026-10-08, C1f-b: `c3c2233` runs on SQ-CLOUD-01 behind `https://compute.softqraftlabs.com` (Neon `softqraft-compute`, Frankfurt), switched on in Cloud for the "Compute Pilot" project. The host agent runs live on sq-node-01 (Proxmox VE 9.2), templates 9000 (Debian 12 `20261006-2623`) and 9001 (Ubuntu 24.04 `20260926`). The first VM was created, logged into over SSH through the host, and its fences checked from inside: internet reachable; production, outbound mail, the Proxmox API and host SSH blocked.
+
+### Fixed
+
+- The agent's Proxmox role needs the read-only `Pool.Audit`: without it Proxmox VE leaves `pool` out of `/cluster/resources` and every template reads as missing (found in C1f-b). The role is now one list, `PROXMOX_AGENT_ROLE_PRIVILEGES` (`packages/driver-proxmox/src/role.ts`), checked against the command in `docs/host-agent.md`. The fake Proxmox models a token without it (`poolAudit: false`).
+- `templates_missing` names why each template is unusable (`not_found`, `other_node`, `not_template`, `other_pool`, `pool_not_visible`); for `pool_not_visible` the hint names `Pool.Audit`.
+- Docs: `COMPUTE_AGENT_ALLOWED_IPS` lists each host's IPv4 and IPv6 addresses (the host reached Cloudflare over IPv6); downloads use `curl -L`.
+
 ### Added
 
 - C1f-a: Compute ready to deploy, and the pilot host ready to set up (founder decisions F1 to F9, 2026-10-08). Nothing is deployed.

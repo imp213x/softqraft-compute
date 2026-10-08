@@ -278,6 +278,18 @@ describe("Agent job handling", () => {
     assert.equal(reads, 3, "at each start and before the refused create; once seen, not again");
   });
 
+  it("says Pool.Audit is missing when the templates exist but their pool is hidden (C1f-b)", async () => {
+    const driver = new FakeDriver() as FakeDriver & AgentDriver;
+    driver.missingTemplates = async () => [{ imageId: "debian-12", templateVmid: 9000, reason: "pool_not_visible" }];
+    const { agent, api, lines } = build({ driver });
+    api.jobs.push(job());
+    await runUntil(agent, () => api.reports.length === 1);
+    assert.equal(api.reports[0]!.error, TEMPLATES_MISSING);
+    const line = lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((l) => l.msg === TEMPLATES_MISSING)!;
+    assert.deepEqual(line.missing, [{ imageId: "debian-12", templateVmid: 9000, reason: "pool_not_visible" }]);
+    assert.match(String(line.hint), /Pool\.Audit/);
+  });
+
   it("does not check templates when it builds them itself (COMPUTE_AGENT_ENSURE_IMAGES=true)", async () => {
     const driver = new FakeDriver() as FakeDriver & AgentDriver;
     driver.missingTemplates = async () => [{ imageId: "debian-12", templateVmid: 9000 }];

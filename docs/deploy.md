@@ -46,7 +46,7 @@ Do this once, before the first release. Each step can be undone by deleting what
    | `CLOUD_FEDERATION_PUBLIC_KEYS` | Cloud's public key line (public, see below) |
    | `CLOUD_OPERATOR_LAUNCH_ENABLED` | `true` |
    | `COMPUTE_ALLOWED_PROJECTS` | The internal pilot project's Cloud id |
-   | `COMPUTE_AGENT_ALLOWED_IPS` | `195.201.167.183` (sq-node-01) |
+   | `COMPUTE_AGENT_ALLOWED_IPS` | Every public address of each host, IPv4 **and** IPv6: pilot `195.201.167.183,2a01:4f8:13a:fc8::2` (sq-node-01). A dual-stack host reaches Cloudflare over IPv6 by default, so an IPv4-only list refuses its agent. |
    | `COMPUTE_TRUSTED_PROXY_CIDRS` | The `softqraft-edge` subnet from step 2 |
    | `COMPUTE_JOB_SIGNING_KEY_ID`, `COMPUTE_JOB_SIGNING_KEY_PEM` | Generated on the VM, below |
 
