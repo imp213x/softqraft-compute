@@ -45,7 +45,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export interface AgentDriver extends HypervisorDriver {
   ensureImages?: () => Promise<Array<{ imageId: string; action: string }>>;
   /** Read-only: catalogue templates that are not ready. */
-  missingTemplates?: () => Promise<Array<{ imageId: string; templateVmid: number }>>;
+  missingTemplates?: () => Promise<Array<{ imageId: string; templateVmid: number; reason?: string }>>;
 }
 
 /** A create refused because a hand-built template is missing (decision F4). */
@@ -291,10 +291,13 @@ export class Agent {
       return true;
     }
     this.templatesReady = false;
+    const poolHidden = missing.some((m) => m.reason === "pool_not_visible");
     this.log.error(TEMPLATES_MISSING, {
-      missing: missing.map((m) => ({ imageId: m.imageId, templateVmid: m.templateVmid })),
+      missing: missing.map((m) => ({ imageId: m.imageId, templateVmid: m.templateVmid, ...(m.reason ? { reason: m.reason } : {}) })),
       jobs: "create jobs are refused until they exist",
-      hint: "Build the templates by hand in the pool (Compute runbook, templates step); the agent checks again before the next create",
+      hint: poolHidden
+        ? "The templates exist but Proxmox hides their pool from the agent's token: add Pool.Audit to the ComputeAgent role (docs/host-agent.md, Proxmox role)"
+        : "Build the templates by hand in the pool (Compute runbook, templates step); the agent checks again before the next create",
     });
     return false;
   }

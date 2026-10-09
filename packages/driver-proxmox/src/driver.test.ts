@@ -219,19 +219,35 @@ describe("ProxmoxDriver lifecycle against the fake Proxmox", () => {
     const s = await setup();
     try {
       assert.deepEqual(await s.driver.missingTemplates(), [
-        { imageId: "debian-12", templateVmid: 9000 },
-        { imageId: "ubuntu-24.04", templateVmid: 9001 },
+        { imageId: "debian-12", templateVmid: 9000, reason: "not_found" },
+        { imageId: "ubuntu-24.04", templateVmid: 9001, reason: "not_found" },
       ]);
       s.pve.addTemplate(9000);
       // A VM at 9001 that is not a template, or not in the pool, does not count.
       s.pve.addVm({ vmid: 9001, pool: POOL, name: "half-built" });
-      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001, reason: "not_template" }]);
       s.pve.vms.get(9001)!.template = 1;
       s.pve.vms.get(9001)!.pool = "elsewhere";
-      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      assert.deepEqual(await s.driver.missingTemplates(), [{ imageId: "ubuntu-24.04", templateVmid: 9001, reason: "other_pool" }]);
       s.pve.vms.get(9001)!.pool = POOL;
       assert.deepEqual(await s.driver.missingTemplates(), []);
       assert.equal(s.pve.writes().length, 0, "reads only");
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("names a token without Pool.Audit: Proxmox then hides which pool a VM is in (C1f-b, Proxmox VE 9)", async () => {
+    const s = await setup({ poolAudit: false });
+    try {
+      s.pve.addTemplate(9000);
+      s.pve.addTemplate(9001);
+      assert.deepEqual(await s.driver.missingTemplates(), [
+        { imageId: "debian-12", templateVmid: 9000, reason: "pool_not_visible" },
+        { imageId: "ubuntu-24.04", templateVmid: 9001, reason: "pool_not_visible" },
+      ]);
+      await assert.rejects(s.driver.create(createInput(randomUUID())), code(PROXMOX_ERRORS.imageUnavailable));
+      assert.equal(s.pve.writes().length, 0, "nothing is written while the pool is not visible");
     } finally {
       await s.close();
     }

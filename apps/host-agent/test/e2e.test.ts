@@ -205,7 +205,7 @@ describe("host agent end to end: real API, real agent, fake Proxmox", () => {
       e.start();
       await e.waitFor("templates check", async () => e.logs.some((l) => l.includes('"msg":"templates_missing"')));
       const line = JSON.parse(e.logs.find((l) => l.includes('"msg":"templates_missing"'))!) as { missing: unknown };
-      assert.deepEqual(line.missing, [{ imageId: "ubuntu-24.04", templateVmid: 9001 }]);
+      assert.deepEqual(line.missing, [{ imageId: "ubuntu-24.04", templateVmid: 9001, reason: "not_found" }]);
       await e.waitFor("host active", async () => {
         const res = await e.browser(e.admin, "GET", "/admin/v1/fleet/hosts");
         return ((await res.json()) as { hosts: Array<{ state: string }> }).hosts[0]?.state === "active";
